@@ -3,6 +3,7 @@
 
 //#include "stm32f10x.h"
 #include "Utils.h"
+//#include "CommHandlers.h"
 
 /* Режим работы модуля */
 typedef enum {PASSIVE, ACTIVE} ModuleStateType;
@@ -37,7 +38,27 @@ typedef /*const*/ struct __attribute((packed))
 	uint16_t FwVersion;        // Номер версии встроенного ПО
 } TBlockInfo;
 
+/* Структура для команды или ответа на команду */
+#pragma anon_unions
+typedef struct __attribute((packed))
+{
+	uint8_t commNum : 4;							// Номер команды
+	uint8_t modAddr : 4;							// Адрес модуля
+	union __attribute((packed))
+	{
+		uint16_t commParam;							// Параметры короткой команды
+		struct __attribute((packed))
+		{
+			uint8_t commLen;							// Длина длинной команды
+			uint8_t commIndx;							// Индекс длинной команды
+		};
+		uint8_t toggleByte;							// Тогл-байт статус-запроса
+	};
+	uint8_t commData[256];						// Массив данных длинной команды
+} TCommReply;
 
-#define MODULE_ADR 0
+typedef void (*TcommHandler)(const TCommReply * const comm);
+
+#define MODULE_ADR 0			// Адрес модуля
 
 #endif

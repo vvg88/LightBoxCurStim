@@ -366,7 +366,7 @@
             <v6Lang>0</v6Lang>
             <v6LangP>0</v6LangP>
             <VariousControls>
-              <MiscControls></MiscControls>
+              <MiscControls>--c99</MiscControls>
               <Define></Define>
               <Undefine></Undefine>
               <IncludePath></IncludePath>
@@ -427,6 +427,11 @@
               <FileType>1</FileType>
               <FilePath>.\src\Utils.c</FilePath>
             </File>
+            <File>
+              <FileName>CommHandlers.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\src\CommHandlers.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -466,6 +471,12 @@
           <targetInfo name="Target 1"/>
         </targetInfos>
       </component>
+      <component Cclass="Device" Cgroup="StdPeriph Drivers" Csub="GPIO" Cvendor="Keil" Cversion="3.5.0" condition="STM32F1xx STDPERIPH RCC">
+        <package name="STM32F1xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.0"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
       <component Cclass="Device" Cgroup="StdPeriph Drivers" Csub="PWR" Cvendor="Keil" Cversion="3.5.0" condition="STM32F1xx STDPERIPH RCC">
         <package name="STM32F1xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.0"/>
         <targetInfos>
@@ -473,6 +484,12 @@
         </targetInfos>
       </component>
       <component Cclass="Device" Cgroup="StdPeriph Drivers" Csub="RCC" Cvendor="Keil" Cversion="3.5.0" condition="STM32F1xx STDPERIPH">
+        <package name="STM32F1xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.0"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
+      <component Cclass="Device" Cgroup="StdPeriph Drivers" Csub="USART" Cvendor="Keil" Cversion="3.5.0" condition="STM32F1xx STDPERIPH RCC">
         <package name="STM32F1xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.0"/>
         <targetInfos>
           <targetInfo name="Target 1"/>
