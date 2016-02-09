@@ -1,6 +1,7 @@
 //#include "Utils.h"
 #include "main.h"
 
+uint16_t CheckStimTab(const TStimTabItem * const pCheckedTab, uint8_t tabItemsNum);
 void ExceptionsInit(void);
 void BKPInit(void);
 
@@ -8,6 +9,30 @@ void BKPInit(void);
 TStatus LastResReason;
 /* Очередь событий. Представляет собой массив очередей (в каждой очереди хранятся события одного определенного приоритета) */
 EventsQueueStruct EventsQueue[4];
+
+uint16_t CheckStimTab(const TStimTabItem * const pCheckedTab, uint8_t tabItemsNum)
+{
+	//uint8_t prevIndx = 0;
+	
+	for (int i = 0; i < tabItemsNum; i++)
+	{
+		//prevIndx = (i == 0) ? (tabItemsNum - 1) : (i - 1);
+		
+		if (!IS_AMPL_OK(pCheckedTab[i].posAmp))
+			return STIM_TABLE_ERROR(i, WRONG_POS_AMPL, OVERVALUED);
+		if (!IS_AMPL_OK(pCheckedTab[i].negAmp))
+			return STIM_TABLE_ERROR(i, WRONG_NEG_AMPL, OVERVALUED);
+		if (!IS_NUMOUT_OK(pCheckedTab[i].outNum))
+			return STIM_TABLE_ERROR(i, WRONG_OUTPUT, OVERVALUED);
+		if (!IS_DURATION_OK(pCheckedTab[i].posDur))
+			return STIM_TABLE_ERROR(i, WRONG_POS_IMP_DURATION, pCheckedTab[i].posDur > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED);
+		if (!IS_DURATION_OK(pCheckedTab[i].negDur))
+			return STIM_TABLE_ERROR(i, WRONG_NEG_IMP_DURATION, pCheckedTab[i].negDur > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED);
+		if (!IS_PERIOD_OK(pCheckedTab[i].impPeriod))
+			return STIM_TABLE_ERROR(i, WRONG_IMP_PERIOD, pCheckedTab[i].impPeriod > IMP_PERIOD_MAX ? OVERVALUED : UNDERVALUED);
+	}
+	return ST_OK;
+}
 
 /**
   * @brief  Сохранение источника последнего сброса контроллера

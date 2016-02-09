@@ -24,9 +24,10 @@ int main(void)
 	//const uint8_t * pReplyBuff = 0;
 	//size_t replySize = 0, commSize = 0;
 	
-	//DBGMCU->CR = DBGMCU_CR_DBG_TIM2_STOP | DBGMCU_CR_DBG_TIM3_STOP | DBGMCU_CR_DBG_TIM4_STOP | DBGMCU_CR_DBG_TIM1_STOP | DBGMCU_CR_DBG_TIM8_STOP;
+	DBGMCU->CR = /*DBGMCU_CR_DBG_TIM2_STOP | DBGMCU_CR_DBG_TIM3_STOP | DBGMCU_CR_DBG_TIM4_STOP |*/ DBGMCU_CR_DBG_TIM1_STOP | DBGMCU_CR_DBG_TIM8_STOP;
 	SaveLastRstReason();
 	DevInit();
+	StimTabInit();
 	
 //	USART_SendData(USART1, 0x55);
 //	while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
@@ -37,4 +38,3 @@ int main(void)
 		//SendReply((uint8_t*)&Reply, replySize);
 	}
 }
-

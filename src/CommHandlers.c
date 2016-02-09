@@ -9,6 +9,18 @@ extern TBlockInfo BlockVersions;
 
 /* Состояние работы модуля */
 ModuleStateType ModuleState = PASSIVE;
+/* Таблица стимуляции 1 */
+TStimTabItem StimTabOne[32];
+/* Таблица стимуляции 2 */
+TStimTabItem StimTabTwo[32];
+/* Индекс текущего элемента таблицы стимуляции */
+__IO uint8_t StimIndex;
+/* Указатель на таблицу стимуляции, по которой ведется стимуляция */
+const TStimTabItem * pUsedStimTab;
+/* Количество обходимых элементов в таблице стимуляции */
+__IO uint8_t UsedStimTabItemsNum = 0;
+/* Признак, что таблица была переписана */
+bool TabWasChanged = false;
 
 void StatReqHandler(const TCommReply * const comm);
 void InfoReqHandler(const TCommReply * const comm);
@@ -153,7 +165,26 @@ void InfoReqHandler(const TCommReply * const comm)
 
 void LoadStimTabHandler(const TCommReply * const comm)
 {
+	uint8_t * pFirstElem = 0;		// Указатель на элемент таблицы стимуляции с которого производится ее обновление
 	
+	if (ModuleState == ACTIVE)
+	{
+		/* Сохранить адрес начального элемента для той таблицы, по которой сейчас нет стимуляции.
+		 * Индекс начального элемента сохранен в 0-ом байте переданного массива данных */
+		pFirstElem = (pUsedStimTab == StimTabOne) ? (uint8_t *)(&StimTabTwo[comm->commData[0]]) : (uint8_t *)(&StimTabOne[comm->commData[0]]);
+		
+		if ((comm->commLen - 1) % sizeof(TStimTabItem) == 0)
+		{
+			for (int i = 1; i < comm->commLen; i++)		// Проверить, что элементы таблицы стимуляции были переданы полностью
+				pFirstElem[i - 1] = comm->commData[i];		// Скопировать данные во временную таблицу при успешной проверке 
+			ReturnStatus(ST_OK);
+			TabWasChanged = true;
+		}
+		else
+			ReturnStatus(WRONG_STIM_TAB_LOAD);				// или выдать ошибку при неуспешной проверке
+	}
+	else
+		ReturnStatus(ST_CMD_UNABLE);
 }
 
 /**
@@ -296,4 +327,25 @@ void SendReply(const uint8_t * const buff, size_t length)
 	
 	while(USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
 	USART_SendData(USART1, crc);							// Передать CRC
+}
+
+/**
+	* @brief  Инициализировать таблицы стимуляции
+	* @param  None
+  * @retval None
+  */
+void StimTabInit()
+{
+	for (int i = 0; i < 32; i++)
+	{
+		StimTabOne[i].impCnt = StimTabTwo[i].impCnt = 1;
+		StimTabOne[i].outNum = StimTabTwo[i].outNum = 0;
+		StimTabOne[i].posAmp = StimTabTwo[i].posAmp = 10;
+		StimTabOne[i].negAmp = StimTabTwo[i].negAmp = 0;
+		StimTabOne[i].posDur = StimTabTwo[i].posDur = 100;
+		StimTabOne[i].negDur = StimTabTwo[i].negDur = 0;
+		StimTabOne[i].impPeriod = StimTabTwo[i].impPeriod = 10;
+	}
+	UsedStimTabItemsNum = 32;
+	pUsedStimTab = StimTabOne;
 }
