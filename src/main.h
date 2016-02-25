@@ -88,10 +88,11 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define IMP_PERIOD_MIN		10			// Минимальное значение периода импульсов в трейне
 #define IMP_PERIOD_MAX		10e3		// Максимальное значение периода импульсов в трейне
 
-#define IS_AMPL_OK(ampVal)	 	 (abs(ampVal) <= AMPL_MAX)																				// Проверить значение амплитуды
-#define IS_NUMOUT_OK(outNum) 	 ((outNum == 0) || (outNum == 1))																// Проверить номер выхода
-#define IS_DURATION_OK(durVal) ((durVal >= IMP_DURATION_MIN) && (durVal <= IMP_DURATION_MAX))	// Проверить значение длительности импульса
-#define IS_PERIOD_OK(perVal)	 ((perVal >= IMP_PERIOD_MIN) && (perVal <= IMP_PERIOD_MAX))			// Проверить значение периода импульсов в трейне
+#define IS_AMPL_OK(ampVal)	 	 			(abs(ampVal) <= AMPL_MAX)																				// Проверить значение амплитуды
+#define IS_NUMOUT_OK(outNum) 	 			((outNum == 0) || (outNum == 1))																// Проверить номер выхода
+#define IS_DURATION_OK(durVal) 			((durVal >= IMP_DURATION_MIN) && (durVal <= IMP_DURATION_MAX))	// Проверить значение длительности импульса
+#define IS_PERIOD_OK(perVal)	 			((perVal >= IMP_PERIOD_MIN) && (perVal <= IMP_PERIOD_MAX))			// Проверить значение периода импульсов в трейне
+#define IS_IMP_COUNT_OK(impCntVal)	((impCntVal >=0) || (impCntVal <= 255))													// Проверить значение количества импульсов в трейне
 
 #define UNDERVALUED 0
 #define OVERVALUED 	1
@@ -104,10 +105,44 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define WRONG_NEG_IMP_DURATION		4		// Неверное значение длительности отрицательного импульса в трейне
 #define WRONG_IMP_PERIOD					5		// Неверное значение периода импульсов в трейне
 #define WRONG_OUTPUT							6		// Неверное значение номера выхода коммутатора
+#define WRONG_IMPCNTR							7		// Неверное значение количества импульсов в трейне
 
 /* Макрос, возвращающий код ошибки при проверке таблицы стимуляции.
  * Возвращаются 2 байта. Структура их следующая:
  * |0111 - признак кода ошибки в таблице стимуляции|xx - не определены|yyyyy - номер неверного элемента в таблице стимуляции|zzzz - код ошибки|1 бит - перебор или недобор|*/
 #define STIM_TABLE_ERROR(elemNum, code, type) ((0x7000) | (elemNum << ELEMENT_NUM_OFFSET) | (code << ERROR_CODE_OFFSET) | (type))
+
+/* Макрос включения-отключения умножителя напряжения для зарядки накопительного конденсатора */
+#define HIGH_VOLTAGE(state) ((state == DISABLE) ? (GPIOC->BSRR |= GPIO_BSRR_BS5) : (GPIOC->BRR |= GPIO_BRR_BR5))
+/* Управление включением первого выхода */
+#define OUT1_ENABLE(state) ((state == DISABLE) ? (GPIOC->BSRR |= GPIO_BSRR_BS9) : (GPIOC->BRR |= GPIO_BRR_BR9))
+/* Управление включением второго выхода */
+#define OUT2_ENABLE(state) ((state == DISABLE) ? (GPIOC->BSRR |= GPIO_BSRR_BS10) : (GPIOC->BRR |= GPIO_BRR_BR10))
+
+/* Время передачи команды и получения ответа от вилочкового стимулятора (мкс).
+ * Передача осуществляется на скорости 1200 Бит/с.
+ * Передается байт команды, максимальная задержка 1.05 мс, передается байт ответа => Тпер = (1 / 1,2 * 10) * 2 + 1,05 = 17,717 (мс) */
+#define COMM_TO_PERIPH_TIME (17717 + 1000)
+
+/* Адреса вилочкового электрода */
+#define FORK_STIM_COMM_ADR 		  0x80
+#define FORK_STIM_RESP_ADR 		  0
+/* Выбор светодиода */
+#define ALL_LEDS_OFF 0
+#define LEFT_LED_ON  0x01
+#define RIGHT_LED_ON 0x02
+
+/* Константа для сопротивления 24 Ом */
+#define _27_OHM ((30.0 * 300.0) / (30.0 + 300.0))
+/* Опорное напряжение АЦП и ЦАП */
+#define V_REF 3.3
+/* Установить диапазон амплитуды */
+#define SET_AMPLITUDE_RANGE(value) ((value > 0) ? (GPIOC->BSRR |= GPIO_BSRR_BS6) : (GPIOC->BRR |= GPIO_BRR_BR6))
+/* Коэффициент преобразования для перевода значений тока в дискреты ЦАП */
+#define AMP_TO_VOLT_DAC(ampVal) ((ampVal > 0) ? (0.0001 / (2.5 / 4096 / _27_OHM)) : (0.00001 / (2.5 / 4096 / 300.0)))
+/* Макрос получения байта для синхросигнала */
+#define MAKE_SYNCHRO_SIGNAL(val) ((val << 2) | (0x80))
+
+int16_t GetMaxAmp(const TStimTabItem * const stimTabItem);
 
 #endif

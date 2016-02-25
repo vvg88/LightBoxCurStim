@@ -7,35 +7,49 @@ extern TStatus LastResReason;
 /* Структура с версиями */
 extern TBlockInfo BlockVersions;
 
+extern uint16_t CheckStimTab(const TStimTabItem * const pCheckedTab, uint8_t tabItemsNum);
+
 /* Состояние работы модуля */
 ModuleStateType ModuleState = PASSIVE;
 /* Таблица стимуляции 1 */
 TStimTabItem StimTabOne[32];
 /* Таблица стимуляции 2 */
 TStimTabItem StimTabTwo[32];
-/* Индекс текущего элемента таблицы стимуляции */
-__IO uint8_t StimIndex;
+
 /* Указатель на таблицу стимуляции, по которой ведется стимуляция */
-const TStimTabItem * pUsedStimTab;
+/*const*/ TStimTabItem * pUsedStimTab;
 /* Количество обходимых элементов в таблице стимуляции */
 __IO uint8_t UsedStimTabItemsNum = 0;
 /* Признак, что таблица была переписана */
 bool TabWasChanged = false;
+/* Признак, что таблица была проверена. Стимуляция не запустится без проверки */
+bool TabWasChecked = true;
+/* Количество стимулов */
+__IO uint16_t StimCount = 0;
 
 void StatReqHandler(const TCommReply * const comm);
 void InfoReqHandler(const TCommReply * const comm);
 void LoadStimTabHandler(const TCommReply * const comm);
 void SaveT0handler(const TCommReply * const comm);
 void SaveT1handler(const TCommReply * const comm);
+void SetAmp(const TCommReply * const comm);
+void SetTrainImpCount(const TCommReply * const comm);
+void SetOutNum(const TCommReply * const comm);
+void SetImpDuration(const TCommReply * const comm);
+void SetTrainImpPeriod(const TCommReply * const comm);
+void CheckStimTable(const TCommReply * const comm);
+void StartStimulation(const TCommReply * const comm);
+
 void ReturnStatus(const TStatus stat);
 void ReturnValue(const uint8_t cmd, const uint16_t value);
+void ReturnError(const uint16_t errCod);
 void ReturnLongReply(const uint8_t * const pBuff, size_t buffSize);
 void SendReply(const uint8_t * const buff, size_t length);
 
 /* Обработчики коротких команд */
 const TcommHandler CommHandlers[15] =
 {
-	StatReqHandler, SaveT0handler, SaveT1handler, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, InfoReqHandler,
+	StatReqHandler, SaveT0handler, SaveT1handler, SetAmp, SetTrainImpCount, SetOutNum, SetImpDuration, SetTrainImpPeriod, CheckStimTable, StartStimulation, 0, 0, 0, 0, InfoReqHandler,
 };
 
 /* Обработчики длинных команд */
@@ -138,6 +152,201 @@ void SaveT1handler(const TCommReply * const comm)
 	ReturnStatus(ST_OK);
 }
 
+// Проверка и установка амплитуды
+void SetAmp(const TCommReply * const comm)
+{
+	// Определить индекс изменяемой таблицы
+	TStimTabItem * const pChangedTab = (TabWasChanged) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	
+	if (T0 <= 31)		// Проверить индекс
+	{
+		if (T0 <= UsedStimTabItemsNum - 1)
+		{
+			switch (T1)		// Определить, какая амплитуда задается
+			{
+				case 0:
+					if (!IS_AMPL_OK(comm->commParam))		// Проверить устанавливаемое значение
+						ReturnError(STIM_TABLE_ERROR(T0, WRONG_POS_AMPL, OVERVALUED));
+					else
+					{
+						pChangedTab[T0].posAmp = (int16_t)comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+					break;
+				case 1:
+					if (!IS_AMPL_OK(comm->commParam))		// Проверить устанавливаемое значение
+						ReturnError(STIM_TABLE_ERROR(T0, WRONG_NEG_AMPL, OVERVALUED));
+					else
+					{
+						pChangedTab[T0].negAmp = (int16_t)comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+					break;
+				default:
+					ReturnStatus(ST_CMD_WRONG_PARAM);
+					break;
+			}
+		}
+		else
+			ReturnStatus(STIM_TAB_INDX_OUT_OF_USED_RANGE);
+	}
+	else
+		ReturnStatus(STIM_TAB_INDX_OUT_OF_RANGE);
+}
+
+// Проверить и установить число импульсов в трейне
+void SetTrainImpCount(const TCommReply * const comm)
+{
+	// Определить индекс изменяемой таблицы
+	TStimTabItem * const pChangedTab = (TabWasChanged) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	
+	if (T0 <= 31)		// Проверить индекс
+	{
+		if (T0 <= UsedStimTabItemsNum - 1)
+		{
+			pChangedTab[T0].impCnt = (uint8_t)comm->commParam;
+			ReturnStatus(ST_OK);
+		}
+		else
+			ReturnStatus(STIM_TAB_INDX_OUT_OF_USED_RANGE);
+	}
+	else
+		ReturnStatus(STIM_TAB_INDX_OUT_OF_RANGE);
+}
+
+// Проверить и установить номер выхода
+void SetOutNum(const TCommReply * const comm)
+{
+	// Определить индекс изменяемой таблицы
+	TStimTabItem * const pChangedTab = (TabWasChanged) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	
+	if (T0 <= 31)		// Проверить индекс
+	{
+		if (T0 <= UsedStimTabItemsNum - 1)
+		{
+			if (!IS_NUMOUT_OK(comm->commParam))
+				ReturnError(STIM_TABLE_ERROR(T0, WRONG_OUTPUT, OVERVALUED));
+			else
+			{
+				pChangedTab[T0].outNum = (uint8_t)comm->commParam;
+				ReturnStatus(ST_OK);
+			}
+		}
+		else
+			ReturnStatus(STIM_TAB_INDX_OUT_OF_USED_RANGE);
+	}
+	else
+		ReturnStatus(STIM_TAB_INDX_OUT_OF_RANGE);
+}
+
+// Проверка и установка длительности
+void SetImpDuration(const TCommReply * const comm)
+{
+	// Определить индекс изменяемой таблицы
+	TStimTabItem * const pChangedTab = (TabWasChanged) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	
+	if (T0 <= 31)		// Проверить индекс
+	{
+		if (T0 <= UsedStimTabItemsNum - 1)
+		{
+			switch (T1)		// Определить, какая длит-ть задается
+			{
+				case 0:
+					if (!IS_DURATION_OK(comm->commParam))		// Проверить устанавливаемое значение
+						ReturnError(STIM_TABLE_ERROR(T0, WRONG_POS_IMP_DURATION, comm->commParam > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED));
+					else
+					{
+						pChangedTab[T0].posDur = comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+					break;
+				case 1:
+					if (!IS_DURATION_OK(comm->commParam))		// Проверить устанавливаемое значение
+						ReturnError(STIM_TABLE_ERROR(T0, WRONG_NEG_IMP_DURATION, comm->commParam > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED));
+					else
+					{
+						pChangedTab[T0].negDur = comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+					break;
+				default:
+					ReturnStatus(ST_CMD_WRONG_PARAM);
+					break;
+			}
+		}
+		else
+			ReturnStatus(STIM_TAB_INDX_OUT_OF_USED_RANGE);
+	}
+	else
+		ReturnStatus(STIM_TAB_INDX_OUT_OF_RANGE);
+}
+
+// Установить период импульсов в трейне
+void SetTrainImpPeriod(const TCommReply * const comm)
+{
+	// Определить индекс изменяемой таблицы
+	TStimTabItem * const pChangedTab = (TabWasChanged) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	
+	if (T0 <= 31)		// Проверить индекс
+	{
+		if (T0 <= UsedStimTabItemsNum - 1)
+		{
+			if (!IS_PERIOD_OK(comm->commParam))
+				ReturnError(STIM_TABLE_ERROR(T0, WRONG_IMP_PERIOD, comm->commParam > IMP_PERIOD_MAX ? OVERVALUED : UNDERVALUED));
+			else
+			{
+				pChangedTab[T0].impPeriod = comm->commParam;
+				ReturnStatus(ST_OK);
+			}
+		}
+		else
+			ReturnStatus(STIM_TAB_INDX_OUT_OF_USED_RANGE);
+	}
+	else
+		ReturnStatus(STIM_TAB_INDX_OUT_OF_RANGE);
+}
+
+// Проверить таблицу стимуляции
+void CheckStimTable(const TCommReply * const comm)
+{
+	uint16_t stimTabErr = 0;
+	
+	if (ModuleState == ACTIVE)
+	{
+		if ((comm->commParam > 0) && (comm->commParam < 32))
+		{
+			stimTabErr = CheckStimTab(pUsedStimTab == StimTabOne ? StimTabTwo : StimTabOne, comm->commParam);
+			if (stimTabErr != ST_OK)
+				ReturnError(stimTabErr);
+			else
+			{
+				UsedStimTabItemsNum = comm->commParam;
+				TabWasChecked = true;
+				ReturnStatus(ST_OK);
+			}
+		}
+		else
+			ReturnStatus(ST_CMD_WRONG_PARAM);
+	}
+	else
+		ReturnStatus(ST_CMD_UNABLE);
+}
+
+// Начать стимуляцию
+void StartStimulation(const TCommReply * const comm)
+{
+	if (ModuleState == STIMULATION)
+		StopStim();		// Остановить стимуляцию
+	StimCount = comm->commParam;
+	if (TabWasChecked)		// Если таблица была проверена
+	{
+		StartStim();				// Старт стимуляции
+		ReturnStatus(ST_OK);
+	}
+	else
+		ReturnStatus(ST_CMD_UNABLE);		// Иначе отправить ошибку
+}
+
 /**
 	* @brief  Обработчик запроса информации и изменения состояния
 	* @param  comm: указатель на команду
@@ -148,6 +357,7 @@ void InfoReqHandler(const TCommReply * const comm)
 	switch (comm->commParam)
 	{
 		case 0:			// Перейти в активный режим
+			ActiveModeInit();
 			ModuleState = ACTIVE;
 			ReturnValue(ST_RAP_CODE, ST_OK);
 			break;
@@ -163,6 +373,11 @@ void InfoReqHandler(const TCommReply * const comm)
 	}
 }
 
+/**
+	* @brief  Загрузка таблицы стимуляции
+	* @param  comm: указатель на команду
+  * @retval none
+  */
 void LoadStimTabHandler(const TCommReply * const comm)
 {
 	uint8_t * pFirstElem = 0;		// Указатель на элемент таблицы стимуляции с которого производится ее обновление
@@ -179,6 +394,7 @@ void LoadStimTabHandler(const TCommReply * const comm)
 				pFirstElem[i - 1] = comm->commData[i];		// Скопировать данные во временную таблицу при успешной проверке 
 			ReturnStatus(ST_OK);
 			TabWasChanged = true;
+			TabWasChecked = false;
 		}
 		else
 			ReturnStatus(WRONG_STIM_TAB_LOAD);				// или выдать ошибку при неуспешной проверке
@@ -212,6 +428,16 @@ void ReturnValue(const uint8_t cmd, const uint16_t value)
 	reply.commParam = value;
 	
 	SendReply((uint8_t*)&reply, 3);		// Послать ответ
+}
+
+/**
+	* @brief  Послать код ошибки таблицы стим-ции
+	* @param  errCod: код ошибки
+  * @retval none
+  */
+void ReturnError(const uint16_t errCod)
+{
+	ReturnValue(ST_RAP_CODE, errCod);
 }
 
 /**

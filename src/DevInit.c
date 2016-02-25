@@ -6,6 +6,12 @@ void GPIOinit(void);
 void USARTInit(void);
 void TIMsInit(void);
 void NVICinit(void);
+void AdcInit(void);
+void DacInit(void);
+void SPIInit(void);
+void DMAInit(void);
+
+extern uint8_t SynchroSignal;
 
 void DevInit()
 {
@@ -14,7 +20,11 @@ void DevInit()
 	USARTInit();
 	TIMsInit();
 	NVICinit();
-}
+	AdcInit();
+	DacInit();
+	SPIInit();
+	DMAInit();
+} 
 
 /**
   * @brief  Инициализация тактирования необходимых периферийных модулей.
@@ -24,19 +34,18 @@ void DevInit()
 void RCC_Init(void)
 {
 	/* Установка тактирования порта А, порта В и С, таймеров 1 и 8, АЦП1, АЦП2, АЦП3 */
- 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO | RCC_APB2Periph_USART1 | RCC_APB2Periph_TIM8 | RCC_APB2Periph_TIM1 | RCC_APB2Periph_GPIOC
-												 /*RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2 | RCC_APB2Periph_ADC3*/, ENABLE);
+ 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO | RCC_APB2Periph_USART1 | RCC_APB2Periph_TIM8 | RCC_APB2Periph_TIM1 | RCC_APB2Periph_GPIOC |
+												 RCC_APB2Periph_GPIOB | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2 | RCC_APB2Periph_SPI1 /*| RCC_APB2Periph_ADC3*/, ENABLE);
 	/* Установить частоту тактирования АЦП 12 МГц */
-//	RCC_ADCCLKConfig(RCC_PCLK2_Div4);
+	RCC_ADCCLKConfig(RCC_PCLK2_Div4);
 	
 	/* Установить частоту APB1 6 МГц */
 	RCC_PCLK1Config(RCC_HCLK_Div8);
 	
 	/* Установка тактирования таймера 3, 4 и 2 */
-	/*RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2 RCC_APB1Periph_TIM3 | RCC_APB1Periph_TIM4 |  | RCC_APB1Periph_TIM5 |
-												 RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 | RCC_APB1Periph_USART2 | RCC_APB1Periph_SPI2, ENABLE);*/
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 | RCC_APB1Periph_USART2, ENABLE);
 	/* Разрешить тактирование DMA1 */
-// 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+ 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA2, ENABLE);
 	/* Выбор источника сигнала на линии MCO */
 	RCC_MCOConfig(RCC_MCO_SYSCLK);
 }
@@ -72,6 +81,25 @@ void GPIOinit(void)
 	GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
 	GpioInitStruct.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(GPIOC, &GpioInitStruct);
+	
+	/* Выход CUR-STIM */
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_7;
+	GPIO_Init(GPIOA, &GpioInitStruct);
+	
+	/* Выходы CUR-VHIGH-ON, CUR-OUT2-EN, CUR-OUT1-EN, CUR-HIGH-RANGE */
+	GPIO_SetBits(GPIOC, GPIO_Pin_5 | GPIO_Pin_9 | GPIO_Pin_10);		// Установить неактивное состояние на линиях
+	GPIO_ResetBits(GPIOC, GPIO_Pin_6);
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_5 | GPIO_Pin_6 | GPIO_Pin_9 | GPIO_Pin_10;
+	GpioInitStruct.GPIO_Mode = GPIO_Mode_Out_PP;
+  GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOC, &GpioInitStruct);
+	
+	/* Настройка аналоговых входов/выходов */
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1;		// Линии CUR-HV-SENCE | CUR-STIM-SENCE
+  GpioInitStruct.GPIO_Mode = GPIO_Mode_AIN;
+	GPIO_Init(GPIOB, &GpioInitStruct);
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_0;									// Линии CUR-DAC-OUT
+	GPIO_Init(GPIOA, &GpioInitStruct);	
 }
 
 /**
@@ -94,6 +122,14 @@ void USARTInit(void)
 	
 	/* Enabling of USARTx */
 	USART_Cmd(USART1, ENABLE);
+		
+	/* Initialisation of USART init-structure. Use defalt settings exept baud rate, length of word */
+	USART_StructInit(&UsartInitStruct);
+	UsartInitStruct.USART_BaudRate = 1200;
+	UsartInitStruct.USART_WordLength = USART_WordLength_8b;
+	
+	/* Initialisation of USART2 */
+	USART_Init(USART2, &UsartInitStruct);
 }
 
 /**
@@ -113,7 +149,7 @@ void TIMsInit(void)
 	TIM_BDTRInitTypeDef BdtrInitStruct;
 	
 	// TIM1 Отсчитывает период импульсов в трейне
-	
+	/***************** Инициализация таймера TIM1 *******************/
 	TimeBaseStruct.TIM_Prescaler = 48e3;
 	TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
 	TimeBaseStruct.TIM_Period = 10;
@@ -148,13 +184,10 @@ void TIMsInit(void)
 	TIM_SelectMasterSlaveMode(TIM1, TIM_MasterSlaveMode_Enable);	
 	
 	TIM_ClearFlag(TIM1, TIM_FLAG_Update);
-	// Разрешить прерывание от события Update
-	TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
-	
-	// TIM1
+	/***************** Инициализация таймера TIM1 *******************/
 	
 	// TIM8 Используется для отсчета длительности импульсов
-	
+	/***************** Инициализация таймера TIM8 *******************/
 	TimeBaseStruct.TIM_Prescaler = 48;
 	TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
 	TimeBaseStruct.TIM_Period = 0xFFFF;
@@ -165,7 +198,7 @@ void TIMsInit(void)
 	// Настройка каналов ШИМ.
 	// Канал ШИМ2 исп-ся в формировании положительных импульсов
 	OCInitStruct.TIM_OCMode = TIM_OCMode_PWM1;
-	OCInitStruct.TIM_OutputState = TIM_OutputState_Enable;//TIM_OutputState_Disable;
+	OCInitStruct.TIM_OutputState = TIM_OutputState_Disable;//TIM_OutputState_Enable;
 	OCInitStruct.TIM_OutputNState = TIM_OutputNState_Disable;
 	OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_Low;//TIM_OCPolarity_High;
 	OCInitStruct.TIM_OCNPolarity = TIM_OCNPolarity_Low;
@@ -176,7 +209,7 @@ void TIMsInit(void)
 	
 	// Канал ШИМ3 исп-ся в формировании отрицательных импульсов
 	OCInitStruct.TIM_OCMode = TIM_OCMode_PWM2;
-	OCInitStruct.TIM_OutputState = TIM_OutputState_Enable;//TIM_OutputState_Disable;
+	OCInitStruct.TIM_OutputState = TIM_OutputState_Disable;//TIM_OutputState_Enable;
 	OCInitStruct.TIM_OutputNState = TIM_OutputNState_Disable;
 	OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_Low;//TIM_OCPolarity_High;
 	OCInitStruct.TIM_OCNPolarity = TIM_OCNPolarity_Low;
@@ -203,12 +236,26 @@ void TIMsInit(void)
 	TIM_SelectSlaveMode(TIM8, TIM_SlaveMode_Trigger);
 	
 	TIM_ClearFlag(TIM8, TIM_FLAG_Trigger | TIM_FLAG_CC1);
-	// Разрешение прерываний
-	TIM_ITConfig(TIM8, TIM_IT_Trigger | TIM_IT_CC1, ENABLE);
 	
-//	TIM_CtrlPWMOutputs(TIM8, ENABLE);
+	// Канал ШИМ4 исп-ся для запуска измерения тока стимула
+	OCInitStruct.TIM_OCMode = TIM_OCMode_PWM2;
+	OCInitStruct.TIM_OutputState = TIM_OutputState_Disable;//TIM_OutputState_Enable;
+	OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_High;
+	OCInitStruct.TIM_Pulse = 0;
+	TIM_OC4Init(TIM8, &OCInitStruct);
+	// Установить выходным триггером сигнал OC4Ref для запуска измерения тока стимула
+	TIM_SelectOutputTrigger(TIM8, TIM_TRGOSource_Enable);
+	/***************** Инициализация таймера TIM8 *******************/
 	
-	// TIM8
+	/***************** Инициализация таймера TIM6 *******************/
+	TimeBaseStruct.TIM_Period = 30000;
+  TimeBaseStruct.TIM_Prescaler = 12 - 1;
+  TimeBaseStruct.TIM_ClockDivision = 0;
+  TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
+	TimeBaseStruct.TIM_RepetitionCounter = 0;
+	/* Инициализация таймера */
+  TIM_TimeBaseInit(TIM6, &TimeBaseStruct);
+	/***************** Инициализация таймера TIM6 *******************/
 }
 
 /**
@@ -231,4 +278,122 @@ void NVICinit(void)
 	// Разрешить прерывание от OC1 TIM8
 	NVICinitStruct.NVIC_IRQChannel = TIM8_CC_IRQn;
 	NVIC_Init(&NVICinitStruct);
+	
+	// Разрешить прерывание от TIM6
+	NVICinitStruct.NVIC_IRQChannel = TIM6_IRQn;
+	NVIC_Init(&NVICinitStruct);
+	
+	// Разрешить прерывание от USART2
+	NVICinitStruct.NVIC_IRQChannel = USART2_IRQn;
+	NVIC_Init(&NVICinitStruct);
+	
+	// Разрешить прерывание от ADC2
+	NVICinitStruct.NVIC_IRQChannel = ADC1_2_IRQn;
+	NVIC_Init(&NVICinitStruct);
+}
+
+void AdcInit(void)
+{
+	ADC_InitTypeDef AdcInitStruct;
+	
+	/*** Инициализация АЦП 1 (измерение высокого напряжения)***/
+	AdcInitStruct.ADC_Mode = ADC_Mode_Independent;
+  AdcInitStruct.ADC_ScanConvMode = DISABLE;
+  AdcInitStruct.ADC_ContinuousConvMode = DISABLE;
+  AdcInitStruct.ADC_ExternalTrigConv = ADC_ExternalTrigConv_None;
+  AdcInitStruct.ADC_DataAlign = ADC_DataAlign_Right;
+  AdcInitStruct.ADC_NbrOfChannel = 1;
+  ADC_Init(ADC1, &AdcInitStruct);
+	
+	ADC_RegularChannelConfig(ADC1, ADC_Channel_8, 1, ADC_SampleTime_239Cycles5);
+	
+	ADC_Cmd(ADC1, ENABLE);
+	
+	/* Enable ADC2 reset calibration register */   
+  ADC_ResetCalibration(ADC1);
+  /* Check the end of ADC2 reset calibration register */
+  while(ADC_GetResetCalibrationStatus(ADC1));
+  /* Start ADC2 calibration */
+  ADC_StartCalibration(ADC1);
+  /* Check the end of ADC2 calibration */
+  while(ADC_GetCalibrationStatus(ADC1));
+	/*** Инициализация АЦП 1 ***/
+	
+	/*** Инициализация АЦП 2 (измерение тока стимула)***/
+	ADC_Init(ADC2, &AdcInitStruct);
+	
+	/* Инициализация запуска преобразования по событию канала ШИМ4 таймера 8 */
+	ADC_InjectedChannelConfig(ADC2, ADC_Channel_9, 1, ADC_SampleTime_7Cycles5);
+	ADC_ExternalTrigInjectedConvConfig(ADC2, ADC_ExternalTrigInjecConv_Ext_IT15_TIM8_CC4);
+	GPIO_PinRemapConfig(GPIO_Remap_ADC2_ETRGINJ, ENABLE);		// Разрешить запуск от TIM8_CC4
+	ADC_ExternalTrigInjectedConvCmd(ADC2, ENABLE);
+	
+	ADC_Cmd(ADC2, ENABLE);
+	
+	/* Enable ADC2 reset calibration register */   
+  ADC_ResetCalibration(ADC2);
+  /* Check the end of ADC2 reset calibration register */
+  while(ADC_GetResetCalibrationStatus(ADC2));
+  /* Start ADC2 calibration */
+  ADC_StartCalibration(ADC2);
+  /* Check the end of ADC2 calibration */
+  while(ADC_GetCalibrationStatus(ADC2));
+	/*** Инициализация АЦП 2 ***/
+}
+
+// Инициализация ЦАП, кот. исп-ся для установки амплитуды
+void DacInit(void)
+{
+	DAC_InitTypeDef DAC_InitStructure;
+	
+	DAC_InitStructure.DAC_Trigger = DAC_Trigger_T8_TRGO;
+  DAC_InitStructure.DAC_WaveGeneration = DAC_WaveGeneration_None;
+  DAC_InitStructure.DAC_LFSRUnmask_TriangleAmplitude = DAC_LFSRUnmask_Bit0;
+  DAC_InitStructure.DAC_OutputBuffer = DAC_OutputBuffer_Disable/*DAC_OutputBuffer_Enable*/;
+  DAC_Init(DAC_Channel_1, &DAC_InitStructure);
+
+  /* Enable DAC Channel1: Once the DAC channel1 is enabled, PA.04 is 
+     automatically connected to the DAC converter. */
+  DAC_Cmd(DAC_Channel_1, ENABLE);
+}
+
+// Иницицализация SPI1
+void SPIInit(void)
+{
+	SPI_InitTypeDef  SPI_InitStructure;
+	
+	SPI_InitStructure.SPI_Direction = SPI_Direction_1Line_Tx;
+  SPI_InitStructure.SPI_Mode = SPI_Mode_Master;
+  SPI_InitStructure.SPI_DataSize = SPI_DataSize_8b;
+  SPI_InitStructure.SPI_CPOL = SPI_CPOL_Low;
+  SPI_InitStructure.SPI_CPHA = SPI_CPHA_2Edge;
+  SPI_InitStructure.SPI_NSS = SPI_NSS_Soft;
+  SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_2;
+  SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
+  SPI_InitStructure.SPI_CRCPolynomial = 5;
+  SPI_Init(SPI1, &SPI_InitStructure);
+		
+	SPI_Cmd(SPI1, ENABLE);
+}
+
+// Инициализация DMA для передачи синхросигнала
+void DMAInit(void)
+{
+	DMA_InitTypeDef  DMA_InitStructure;
+	
+	DMA_DeInit(DMA2_Channel2);
+  DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)(&SPI1->DR);
+  DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)(&SynchroSignal);
+  DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
+  DMA_InitStructure.DMA_BufferSize = 1;
+  DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+  DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable;
+  DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+  DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+  DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
+  DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;
+  DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
+  DMA_Init(DMA2_Channel2, &DMA_InitStructure);
+	
+	DMA_Cmd(DMA2_Channel2, ENABLE);
 }

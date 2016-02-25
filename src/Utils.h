@@ -20,11 +20,20 @@ typedef struct
 #define MAX_EVENT_INDX				MAX_QUEUE_CAPACITY - 1		// Максимальный индекс события
 	
 #define ELEMENTS_OF(arr) (sizeof(arr)/sizeof(arr[0]))
-
+	
+void ActiveModeInit(void);
+void StartStim(void);
+void InitStim(void);
+void StopStim(void);
+void SendCommToPeriph(uint16_t modType, uint16_t command);
+void SetStimAmpl(int16_t amplVal, bool useSoftWareTrig);
 void SaveLastRstReason(void);
 void InitQueues(void);
 bool EnQueue(uint8_t priority, uint16_t value);
 bool DeQueue(uint16_t * retVal, uint8_t * priority);
+void Delay(uint32_t delVal);
+bool StartDelay(uint32_t delVal);
+void StopDelay(void);
 
 #endif
 
