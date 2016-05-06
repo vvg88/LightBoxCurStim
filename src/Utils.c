@@ -24,6 +24,8 @@ __IO bool IsStimBiPhase;
 /* Байт с синхросигналом стимулятора */
 uint8_t SynchroSignal = 0;
 
+int16_t CurrentAmpl = 0;
+
 // Инициализация активного режима
 void ActiveModeInit(void)
 {
@@ -43,16 +45,16 @@ uint16_t CheckStimTab(const TStimTabItem * const pCheckedTab, uint8_t tabItemsNu
 {
 	for (int i = 0; i < tabItemsNum; i++)
 	{		
-		if (!IS_AMPL_OK(pCheckedTab[i].posAmp))
-			return STIM_TABLE_ERROR(i, WRONG_POS_AMPL, OVERVALUED);
-		if (!IS_AMPL_OK(pCheckedTab[i].negAmp))
-			return STIM_TABLE_ERROR(i, WRONG_NEG_AMPL, OVERVALUED);
+		if (!IS_AMPL_OK(pCheckedTab[i].firstAmp))
+			return STIM_TABLE_ERROR(i, WRONG_FIR_AMPL, OVERVALUED);
+		if (!IS_AMPL_OK(pCheckedTab[i].secAmp))
+			return STIM_TABLE_ERROR(i, WRONG_SEC_AMPL, OVERVALUED);
 		if (!IS_NUMOUT_OK(pCheckedTab[i].outNum))
 			return STIM_TABLE_ERROR(i, WRONG_OUTPUT, OVERVALUED);
-		if (!IS_DURATION_OK(pCheckedTab[i].posDur))
-			return STIM_TABLE_ERROR(i, WRONG_POS_IMP_DURATION, pCheckedTab[i].posDur > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED);
-		if (!IS_DURATION_OK(pCheckedTab[i].negDur))
-			return STIM_TABLE_ERROR(i, WRONG_NEG_IMP_DURATION, pCheckedTab[i].negDur > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED);
+		if (!IS_DURATION_OK(pCheckedTab[i].firstDur))
+			return STIM_TABLE_ERROR(i, WRONG_FIR_IMP_DURATION, pCheckedTab[i].firstDur > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED);
+		if (!IS_DURATION_OK(pCheckedTab[i].secDur))
+			return STIM_TABLE_ERROR(i, WRONG_SEC_IMP_DURATION, pCheckedTab[i].secDur > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED);
 		if (!IS_PERIOD_OK(pCheckedTab[i].impPeriod))
 			return STIM_TABLE_ERROR(i, WRONG_IMP_PERIOD, pCheckedTab[i].impPeriod > IMP_PERIOD_MAX ? OVERVALUED : UNDERVALUED);
 	}
@@ -69,14 +71,7 @@ void StartStim(void)
 	}
 	StimIndex = 0;		// Обнулить индекс текущего элем-та
 	InitStim();
-	
-	TIM_ClearFlag(TIM1, TIM_FLAG_Update);
-	TIM_ClearFlag(TIM8, TIM_FLAG_Trigger | TIM_FLAG_CC1);
-	// Разрешить прерывание от события Update TIM1
-	TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
-	// Разрешение прерываний для TIM8
-	TIM_ITConfig(TIM8, TIM_IT_Trigger | TIM_IT_CC1, ENABLE);
-	
+		
 	/* Разрешить прерывания от АЦП2 (измерение тока стимула) */
 	ADC_ClearFlag(ADC2, ADC_FLAG_JEOC);
 	ADC_ITConfig(ADC2, ADC_IT_JEOC, ENABLE);
@@ -84,7 +79,16 @@ void StartStim(void)
 	/* Разрешить генерацию DMA запросов от сигнала триггера TIM8, чтобы генерировать синхросигналы на первом импульсе трейна */
 	TIM_DMACmd(TIM8, TIM_DMA_Trigger, ENABLE);
 	
-	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);		// Разрешить вход захвата-сравнения №1 сигнала запуска
+	TIM_ClearFlag(TIM8, TIM_FLAG_Trigger | TIM_FLAG_CC1);
+	// Разрешение прерываний для TIM8
+	TIM_ITConfig(TIM8, TIM_IT_Trigger | TIM_IT_CC1, ENABLE);
+	
+	TIM_ClearFlag(TIM1, TIM_FLAG_Update);
+	// Разрешить прерывание от события Update TIM1
+	TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
+	
+	TIM_SelectInputTrigger(TIM1, TIM_TS_TI1F_ED); ////TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);		// Разрешить вход захвата-сравнения №1 сигнала запуска
+	
 	ModuleState = STIMULATION;
 }
 
@@ -92,30 +96,38 @@ void StartStim(void)
 void InitStim(void)
 {
 	// Установить период имп-ов в трейне
-	TIM_SetAutoreload(TIM1, pUsedStimTab[StimIndex].impPeriod);		
-	TIM_SetCompare2(TIM1, pUsedStimTab[StimIndex].impPeriod);
+	TIM_SetAutoreload(TIM1, pUsedStimTab[StimIndex].impPeriod);		/// * 1e3
+	TIM_SetCompare2(TIM1, pUsedStimTab[StimIndex].impPeriod);			/// * 1e3
+	
+	TIM1->RCR = pUsedStimTab[StimIndex].impCnt;		// Установить число импульсов в трейне impCnt - 1
+	TIM1->DIER &= ~TIM_DIER_UIE;									// Чтобы число имп-ов в трейне установилось сразу при изменении, а не через 1 стимул
+	TIM1->EGR |= TIM_EGR_UG;											// запретить прерывание TIM1, сгенерировать update TIM1
+	TIM1->SR &= ~TIM_SR_UIF;											// очистить флаг
+	TIM1->DIER |= TIM_DIER_UIE;										// разрешить прерывание
 	
 	// Если стимул положительный
-	if (pUsedStimTab[StimIndex].posDur > 0)
+	if ((pUsedStimTab[StimIndex].outNum & 0x80) == 0)
 	{
-		SetStimAmpl(pUsedStimTab[StimIndex].posAmp, false);			// Установить амплитуду
-		
-		TIM_SetCompare2(TIM8, pUsedStimTab[StimIndex].posDur);			// Установить длит-ть "+" импульса
-		TIM_SelectOCxM(TIM8, TIM_Channel_2, TIM_OCMode_PWM1);				// Установить режим выхода ШИМ1
-		TIM_SetCompare1(TIM8, pUsedStimTab[StimIndex].posDur);			// Установить общую длит-ть импульса
-		TIM_SetCompare4(TIM8, pUsedStimTab[StimIndex].posDur - 10);	// Установить момент измерения тока стимула
-		TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Enable);						// Разрешить соответствующий выход
-		if (pUsedStimTab[StimIndex].negDur > 0)		// Если стимул бифазный
+		SetStimAmpl(pUsedStimTab[StimIndex].firstAmp, false, true);			// Установить амплитуду
+		CurrentAmpl = pUsedStimTab[StimIndex].firstAmp;
+		TIM_SetCompare2(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));		// Установить длит-ть "+" импульса
+		TIM_SelectOCxM(TIM8, TIM_Channel_2, TIM_OCMode_PWM1);						// Установить режим выхода ШИМ1
+		TIM_SetCompare1(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));		// Установить общую длит-ть импульса
+		TIM_SetCompare4(TIM8, pUsedStimTab[StimIndex].firstDur - 4);		//// Установить момент измерения тока стимула
+		TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Enable);								// Разрешить соответствующий выход
+		if (pUsedStimTab[StimIndex].secDur > 0)		// Если стимул бифазный
 		{
-			TIM_SetCompare3(TIM8, pUsedStimTab[StimIndex].negDur);	// Установить длит-ть "-" импульса
+			TIM_SetCompare3(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));	// Установить длит-ть "-" импульса
+			
+			TIM_SelectOCxM(TIM8, TIM_Channel_3, TIM_OCMode_PWM2);					// Установить режим выхода ШИМ2
+			TIM_SetCompare1(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp) + pUsedStimTab[StimIndex].secDur);			// Установить общую длит-ть импульса ("+" + "-")
+			TIM_SetCompare4(TIM8, (GetMaxAmp(&pUsedStimTab[StimIndex]) == pUsedStimTab[StimIndex].firstAmp ?
+														 pUsedStimTab[StimIndex].firstDur - 4 : pUsedStimTab[StimIndex].firstDur + pUsedStimTab[StimIndex].secDur - 4));	// Установить момент измерения тока стимула
 			TIM_CCxCmd(TIM8, TIM_Channel_3, TIM_CCx_Enable);				// Разрешить выход
-			TIM_SelectOCxM(TIM8, TIM_Channel_3, TIM_OCMode_PWM2);		// Установить режим выхода ШИМ2
-			TIM_SetCompare1(TIM8, pUsedStimTab[StimIndex].posDur + pUsedStimTab[StimIndex].negDur);			// Установить общую длит-ть импульса ("+" + "-")
-			TIM_SetCompare4(TIM8, (GetMaxAmp(&pUsedStimTab[StimIndex]) == pUsedStimTab[StimIndex].posAmp ?
-														 pUsedStimTab[StimIndex].posDur - 10 : pUsedStimTab[StimIndex].posDur + pUsedStimTab[StimIndex].negDur - 10));	// Установить момент измерения тока стимула
-			if (pUsedStimTab[StimIndex].posAmp != pUsedStimTab[StimIndex].negAmp)		// Если стимул бифазный и амплитуда импульсов разная
+			if (pUsedStimTab[StimIndex].firstAmp != pUsedStimTab[StimIndex].secAmp)		// Если стимул бифазный и амплитуда импульсов разная
 			{
 				IsStimBiPhase = true;
+				//TIM_SetCompare4(TIM1, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));	///
 				TIM_ClearFlag(TIM8, TIM_FLAG_CC2);
 				TIM_ITConfig(TIM8, TIM_IT_CC2, ENABLE);			// Разрешить прерывания от канала СС2 TIM8, чтобы менять диапазон
 			}
@@ -123,23 +135,37 @@ void InitStim(void)
 		else
 			TIM_CCxCmd(TIM8, TIM_Channel_3, TIM_CCx_Disable);				// 
 	}
-	else
-	{	
-		if (pUsedStimTab[StimIndex].negDur > 0)		// Если стимул отрицательный
+	else		// Если стимул отрицательный
+	{
+		SetStimAmpl(pUsedStimTab[StimIndex].firstAmp, false, true);			// Установить амплитуду
+		CurrentAmpl = pUsedStimTab[StimIndex].firstAmp;
+		TIM_SetCompare3(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));	// Установить длит-ть 1-го импульса
+		TIM_SelectOCxM(TIM8, TIM_Channel_3, TIM_OCMode_PWM1);					// Установить режим выхода ШИМ1
+		TIM_SetCompare1(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));	// Установить общую длит-ть импульса
+		TIM_SetCompare4(TIM8, pUsedStimTab[StimIndex].firstDur - 4);	// Установить момент измерения тока стимула
+		TIM_CCxCmd(TIM8, TIM_Channel_3, TIM_CCx_Enable);							// Разрешить выход
+		if (pUsedStimTab[StimIndex].secDur > 0)		// Если стимул бифазный
 		{
-			SetStimAmpl(pUsedStimTab[StimIndex].negAmp, false);			// Установить амплитуду
-			
-			TIM_SetCompare3(TIM8, pUsedStimTab[StimIndex].negDur);			// Установить длит-ть "-" импульса
-			TIM_CCxCmd(TIM8, TIM_Channel_3, TIM_CCx_Enable);						// Разрешить выход
-			TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Disable);						// 
-			TIM_SelectOCxM(TIM8, TIM_Channel_3, TIM_OCMode_PWM1);				// Установить режим выхода ШИМ1
-			TIM_SetCompare1(TIM8, pUsedStimTab[StimIndex].negDur);			// Установить общую длит-ть импульса
-			TIM_SetCompare4(TIM8, pUsedStimTab[StimIndex].negDur - 10);	// Установить момент измерения тока стимула
+			TIM_SetCompare2(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));	// Установить длит-ть 2-го импульса
+			TIM_SelectOCxM(TIM8, TIM_Channel_2, TIM_OCMode_PWM2);					// Установить режим выхода ШИМ2
+			TIM_SetCompare1(TIM8, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp) + pUsedStimTab[StimIndex].secDur);			// Установить общую длит-ть импульса ("+" + "-")
+			TIM_SetCompare4(TIM8, (GetMaxAmp(&pUsedStimTab[StimIndex]) == pUsedStimTab[StimIndex].firstAmp ?
+														 pUsedStimTab[StimIndex].firstDur - 4 : pUsedStimTab[StimIndex].firstDur + pUsedStimTab[StimIndex].secDur - 4));	// Установить момент измерения тока стимула
+			TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Enable);				// Разрешить выход
+			if (pUsedStimTab[StimIndex].firstAmp != pUsedStimTab[StimIndex].secAmp)		// Если стимул бифазный и амплитуда импульсов разная
+			{
+				IsStimBiPhase = true;
+				//TIM_SetCompare4(TIM1, pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp));	///
+				TIM_ClearFlag(TIM8, TIM_FLAG_CC3);
+				TIM_ITConfig(TIM8, TIM_IT_CC3, ENABLE);			// Разрешить прерывания от канала СС3 TIM8, чтобы менять диапазон
+			}
 		}
+		else
+			TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Disable);
 	}
 	SynchroSignal = MAKE_SYNCHRO_SIGNAL(StimIndex);		// Сформировать синхросигнал
 	// Установить активный выход
-	if (pUsedStimTab[StimIndex].outNum == 0)
+	if ((pUsedStimTab[StimIndex].outNum & 0x01) == 0)
 	{
 		OUT1_ENABLE(ENABLE);
 		OUT2_ENABLE(DISABLE);
@@ -155,10 +181,13 @@ void InitStim(void)
 void StopStim(void)
 {
 	while (TIM1->CR1 & TIM_CR1_CEN);										// Дождаться завершения стимула
-	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Disable);		// Запретить вход захвата-сравнения №1 сигнала запуска
+	TIM_SelectInputTrigger(TIM1, TIM_TS_ITR0); //TIM_TS_TI1F_ED//TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Disable);		// Запретить вход захвата-сравнения №1 сигнала запуска
 	// Запретить выходы TIM8
 	TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Disable);
 	TIM_CCxCmd(TIM8, TIM_Channel_3, TIM_CCx_Disable);
+	
+	/* Запретить генерацию DMA запросов от сигнала триггера TIM8, чтобы не генерировать синхросигналы */
+	TIM_DMACmd(TIM8, TIM_DMA_Trigger, DISABLE);
 	
 	// Запретить прерывание от события Update TIM1
 	TIM_ITConfig(TIM1, TIM_IT_Update, DISABLE);
@@ -187,10 +216,11 @@ void SendCommToPeriph(uint16_t modType, uint16_t command)
   * @param  amplVal: значение амплитуды
   * @retval none
   */
-void SetStimAmpl(int16_t amplVal, bool useSoftWareTrig)
+void SetStimAmpl(int16_t amplVal, bool useSoftWareTrig, bool setRange)
 {
-	SET_AMPLITUDE_RANGE(amplVal);
-	register uint16_t dacVal = (uint16_t)(abs(amplVal) * AMP_TO_VOLT_DAC(amplVal));
+	if (setRange)
+		SET_AMPLITUDE_RANGE(amplVal);
+	register uint16_t dacVal = (uint16_t)(abs(amplVal) * AMP_TO_VOLT_DAC(amplVal) + (amplVal == -1 ? 0 : AMP_SHIFT_CORRECT));
 	DAC_SetChannel1Data(DAC_Align_12b_R, dacVal);
 	if (useSoftWareTrig)
 	{
@@ -204,21 +234,21 @@ void SetStimAmpl(int16_t amplVal, bool useSoftWareTrig)
 // Определение максимальной амплитуды стимула
 int16_t GetMaxAmp(const TStimTabItem * const stimTabItem)
 {
-	if (stimTabItem->posDur > 0)		
+	if (stimTabItem->firstDur > 0)		
 	{
-		if (stimTabItem->negDur > 0)
+		if (stimTabItem->secDur > 0)
 		{
-			if (stimTabItem->posAmp < 0 && stimTabItem->negAmp < 0)		// Значения для бифазного стимула в зависимости от диапазона
-				return stimTabItem->posAmp < stimTabItem->negAmp ? stimTabItem->posAmp : stimTabItem->negAmp;
+			if (stimTabItem->firstAmp < 0 && stimTabItem->secAmp < 0)		// Значения для бифазного стимула в зависимости от диапазона
+				return stimTabItem->firstAmp < stimTabItem->secAmp ? stimTabItem->firstAmp : stimTabItem->secAmp;
 			else
-				return stimTabItem->posAmp > stimTabItem->negAmp ? stimTabItem->posAmp : stimTabItem->negAmp;
+				return stimTabItem->firstAmp > stimTabItem->secAmp ? stimTabItem->firstAmp : stimTabItem->secAmp;
 		}
-		return stimTabItem->posAmp;		// Значение для положительного стимула
+		return stimTabItem->firstAmp;		// Значение для положительного стимула
 	}
 	else
 	{
-		if (stimTabItem->negDur > 0)
-			return stimTabItem->negAmp;		// Значение для отрицательного стимула
+		if (stimTabItem->secDur > 0)
+			return stimTabItem->secAmp;		// Значение для отрицательного стимула
 	}
 	return 0;
 }

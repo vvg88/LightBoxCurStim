@@ -69,10 +69,10 @@ typedef struct __attribute((packed))
 {
 	uint8_t impCnt;				// Число импульсов в трейне
 	uint8_t outNum;				// Номер выхода
-	int16_t posAmp;				// Амплитуда положительного импульса
-	int16_t negAmp;				// Амплитуда отрицательного импульса
-	uint16_t posDur;			// Длительность положительного импульса
-	uint16_t negDur;			// Длительность отрицательного импульса
+	int16_t firstAmp;			// Амплитуда первого импульса
+	int16_t secAmp;				// Амплитуда второго импульса
+	uint16_t firstDur;		// Длительность первого импульса
+	uint16_t secDur;			// Длительность второго импульса
 	uint16_t impPeriod;		// Период импульсов в трейне
 } TStimTabItem;
 
@@ -85,12 +85,12 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define OUTPUT_NUM_MAX		1				// Максимальное значение номера выхода внешнего коммутатора
 #define IMP_DURATION_MIN	100			// Минимальное значение длительности импульса
 #define IMP_DURATION_MAX	5000		// Максимальное значение длительности импульса
-#define IMP_PERIOD_MIN		10			// Минимальное значение периода импульсов в трейне
-#define IMP_PERIOD_MAX		10e3		// Максимальное значение периода импульсов в трейне
+#define IMP_PERIOD_MIN		2000		// Минимальное значение периода импульсов в трейне (2 мс)
+#define IMP_PERIOD_MAX		50000		// Максимальное значение периода импульсов в трейне	(50 мс)
 
-#define IS_AMPL_OK(ampVal)	 	 			(abs(ampVal) <= AMPL_MAX)																				// Проверить значение амплитуды
-#define IS_NUMOUT_OK(outNum) 	 			((outNum == 0) || (outNum == 1))																// Проверить номер выхода
-#define IS_DURATION_OK(durVal) 			((durVal >= IMP_DURATION_MIN) && (durVal <= IMP_DURATION_MAX))	// Проверить значение длительности импульса
+#define IS_AMPL_OK(ampVal)	 	 			(abs(ampVal) <= AMPL_MAX)															// Проверить значение амплитуды
+#define IS_NUMOUT_OK(outNum) 	 			((outNum == 0) || (outNum == 1) || (outNum == 0x80) || (outNum == 0x81))					// Проверить номер выхода
+#define IS_DURATION_OK(durVal) 			((durVal == 0) || ((durVal >= IMP_DURATION_MIN) && (durVal <= IMP_DURATION_MAX)))	// Проверить значение длительности импульса
 #define IS_PERIOD_OK(perVal)	 			((perVal >= IMP_PERIOD_MIN) && (perVal <= IMP_PERIOD_MAX))			// Проверить значение периода импульсов в трейне
 #define IS_IMP_COUNT_OK(impCntVal)	((impCntVal >=0) || (impCntVal <= 255))													// Проверить значение количества импульсов в трейне
 
@@ -99,10 +99,10 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define ERROR_CODE_OFFSET   1
 #define ELEMENT_NUM_OFFSET  5
 
-#define WRONG_POS_AMPL						1		// Неверное значение амплитуды положительного стимула
-#define WRONG_NEG_AMPL						2		// Неверное значение амплитуды отрицательного стимула
-#define WRONG_POS_IMP_DURATION		3		// Неверное значение длительности положительного импульса в трейне
-#define WRONG_NEG_IMP_DURATION		4		// Неверное значение длительности отрицательного импульса в трейне
+#define WRONG_FIR_AMPL						1		// Неверное значение амплитуды первого импульса
+#define WRONG_SEC_AMPL						2		// Неверное значение амплитуды второго импульса
+#define WRONG_FIR_IMP_DURATION		3		// Неверное значение длительности первого импульса
+#define WRONG_SEC_IMP_DURATION		4		// Неверное значение длительности второго импульса
 #define WRONG_IMP_PERIOD					5		// Неверное значение периода импульсов в трейне
 #define WRONG_OUTPUT							6		// Неверное значение номера выхода коммутатора
 #define WRONG_IMPCNTR							7		// Неверное значение количества импульсов в трейне
@@ -132,16 +132,28 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define LEFT_LED_ON  0x01
 #define RIGHT_LED_ON 0x02
 
-/* Константа для сопротивления 24 Ом */
+/* Константа для сопротивления 27 Ом */
 #define _27_OHM ((30.0 * 300.0) / (30.0 + 300.0))
+/* Константа для сопротивления 15.2 Ом */
+#define _15_OHM ((15.0 * 300.0) / (15.0 + 300.0))
 /* Опорное напряжение АЦП и ЦАП */
 #define V_REF 3.3
 /* Установить диапазон амплитуды */
 #define SET_AMPLITUDE_RANGE(value) ((value > 0) ? (GPIOC->BSRR |= GPIO_BSRR_BS6) : (GPIOC->BRR |= GPIO_BRR_BR6))
 /* Коэффициент преобразования для перевода значений тока в дискреты ЦАП */
-#define AMP_TO_VOLT_DAC(ampVal) ((ampVal > 0) ? (0.0001 / (2.5 / 4096 / _27_OHM)) : (0.00001 / (2.5 / 4096 / 300.0)))
+#define AMP_TO_VOLT_DAC(ampVal) ((ampVal > 0) ? (0.0001 / (V_REF / 4096 / _27_OHM/*_15_OHM*/)) : (0.00001 / (V_REF / 4096 / 300.0)))
+/* Коэффициент коррекции выходного напряжения ЦАП из-за наличия смещения */
+#define AMP_SHIFT_CORRECT (5.0 * 15000.0 / 1015000.0 * 4096 / V_REF)
 /* Макрос получения байта для синхросигнала */
 #define MAKE_SYNCHRO_SIGNAL(val) ((val << 2) | (0x80))
+
+/* Поправка на длительности стимулов, зависящая от амплитуды
+	 * |>0,4 мА|6  мкс|
+	 * |0,3 мА |8  мкс|
+	 * |0,2 мА |14 мкс|
+	 * |0,1 мА |27 мкс|
+	 */
+	 #define IMP_DURATION_ADD(stimAmp) ((stimAmp < -30) ? 6 : ((stimAmp == -30) ? 14 : ((stimAmp == -20) ? 20 : ((stimAmp == -10) ? 33 : 6))))
 
 int16_t GetMaxAmp(const TStimTabItem * const stimTabItem);
 

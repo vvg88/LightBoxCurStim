@@ -42,7 +42,7 @@ void RCC_Init(void)
 	/* Установить частоту APB1 6 МГц */
 	RCC_PCLK1Config(RCC_HCLK_Div8);
 	
-	/* Установка тактирования таймера 3, 4 и 2 */
+	/* Установка тактирования таймера 6 */
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 | RCC_APB1Periph_USART2, ENABLE);
 	/* Разрешить тактирование DMA1 */
  	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA2, ENABLE);
@@ -94,12 +94,50 @@ void GPIOinit(void)
   GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_Init(GPIOC, &GpioInitStruct);
 	
+	///////////////////////////////
+//	GpioInitStruct.GPIO_Pin = GPIO_Pin_9;
+//	GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+//	GpioInitStruct.GPIO_Mode = GPIO_Mode_AF_PP;
+//	GPIO_Init(GPIOC, &GpioInitStruct);
+	///////////////////////////////
+	
+	/* Выводы USART2 - опрос вилки */
+	/* Configure USART2 Rx as input floating */
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_3;
+	GpioInitStruct.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+	GPIO_Init(GPIOA, &GpioInitStruct);
+	/* Configure USART1 Tx as alternate function push-pull (PA9) */
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_2;
+	GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GpioInitStruct.GPIO_Mode = GPIO_Mode_AF_PP;
+	GPIO_Init(GPIOA, &GpioInitStruct);
+	
 	/* Настройка аналоговых входов/выходов */
 	GpioInitStruct.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1;		// Линии CUR-HV-SENCE | CUR-STIM-SENCE
   GpioInitStruct.GPIO_Mode = GPIO_Mode_AIN;
 	GPIO_Init(GPIOB, &GpioInitStruct);
 	GpioInitStruct.GPIO_Pin = GPIO_Pin_0;									// Линии CUR-DAC-OUT
-	GPIO_Init(GPIOA, &GpioInitStruct);	
+	GPIO_Init(GPIOA, &GpioInitStruct);
+	
+	// Выход сигнала установки амплитуды второй части бифазного стимула
+	GPIO_ResetBits(GPIOB, GPIO_Pin_8);
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_8;
+	GpioInitStruct.GPIO_Mode = GPIO_Mode_Out_PP;
+  GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOB, &GpioInitStruct);
+	
+	/*GpioInitStruct.GPIO_Pin = GPIO_Pin_11;
+	GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GpioInitStruct.GPIO_Mode = GPIO_Mode_AF_PP;
+	GPIO_Init(GPIOA, &GpioInitStruct);*/
+	
+	/* Настройка входа внешнего прерывания
+		 (Используется для установки второй части бифазного стимула) */
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_9;
+  GpioInitStruct.GPIO_Mode = GPIO_Mode_IPD;
+	GPIO_Init(GPIOB, &GpioInitStruct);
+	/* Connect EXTI9 Line to PB.09 pin */
+  GPIO_EXTILineConfig(GPIO_PortSourceGPIOB, GPIO_PinSource9);
 }
 
 /**
@@ -150,7 +188,7 @@ void TIMsInit(void)
 	
 	// TIM1 Отсчитывает период импульсов в трейне
 	/***************** Инициализация таймера TIM1 *******************/
-	TimeBaseStruct.TIM_Prescaler = 48e3;
+	TimeBaseStruct.TIM_Prescaler = 47;		//48e3;47999;
 	TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
 	TimeBaseStruct.TIM_Period = 10;
 	TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
@@ -172,12 +210,19 @@ void TIMsInit(void)
 	OCInitStruct.TIM_Pulse = 10;
 	TIM_OC2Init(TIM1, &OCInitStruct);
 	
+	// Канал 4 исп-ся для 
+	/*OCInitStruct.TIM_OCMode = TIM_OCMode_PWM1;
+	OCInitStruct.TIM_OutputState = TIM_OutputState_Disable;
+	OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_High;
+	OCInitStruct.TIM_Pulse = 0xF;//0xFFFF;
+	TIM_OC4Init(TIM1, &OCInitStruct);*/
+	
 	/* Установка для таймера TIM1 однократной перезагрузки */
 	TIM_SelectOnePulseMode(TIM1, TIM_OPMode_Single);
 	
 	TIM_SelectOutputTrigger(TIM1, TIM_TRGOSource_Enable);
 	// Сигнал запуска со входа 1
-	TIM_SelectInputTrigger(TIM1, TIM_TS_TI1F_ED); 
+	TIM_SelectInputTrigger(TIM1, TIM_TS_ITR0); //TIM_TS_TI1F_ED
 	// Сигнал разрешения - выход триггера
 	TIM_SelectSlaveMode(TIM1, TIM_SlaveMode_Trigger);		
 	// Установить бит MSM для синхронизации с TIM8
@@ -188,7 +233,7 @@ void TIMsInit(void)
 	
 	// TIM8 Используется для отсчета длительности импульсов
 	/***************** Инициализация таймера TIM8 *******************/
-	TimeBaseStruct.TIM_Prescaler = 48;
+	TimeBaseStruct.TIM_Prescaler = 47;
 	TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
 	TimeBaseStruct.TIM_Period = 0xFFFF;
 	TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
@@ -219,6 +264,8 @@ void TIMsInit(void)
 	// Канал 1 используется для генерации события, при котором останавливается таймер	
 	OCInitStruct.TIM_OCMode = TIM_OCMode_PWM1;
 	OCInitStruct.TIM_OutputState = TIM_OutputState_Disable;
+	OCInitStruct.TIM_OutputNState = TIM_OutputNState_Disable;
+	OCInitStruct.TIM_OCNPolarity = TIM_OCNPolarity_High;
 	OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_High;
 	OCInitStruct.TIM_Pulse = 200;
 	TIM_OC1Init(TIM8, &OCInitStruct);
@@ -239,7 +286,7 @@ void TIMsInit(void)
 	
 	// Канал ШИМ4 исп-ся для запуска измерения тока стимула
 	OCInitStruct.TIM_OCMode = TIM_OCMode_PWM2;
-	OCInitStruct.TIM_OutputState = TIM_OutputState_Disable;//TIM_OutputState_Enable;
+	OCInitStruct.TIM_OutputState = TIM_OutputState_Enable;//TIM_OutputState_Disable;
 	OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_High;
 	OCInitStruct.TIM_Pulse = 0;
 	TIM_OC4Init(TIM8, &OCInitStruct);
@@ -309,13 +356,13 @@ void AdcInit(void)
 	
 	ADC_Cmd(ADC1, ENABLE);
 	
-	/* Enable ADC2 reset calibration register */   
+	/* Enable ADC1 reset calibration register */   
   ADC_ResetCalibration(ADC1);
-  /* Check the end of ADC2 reset calibration register */
+  /* Check the end of ADC1 reset calibration register */
   while(ADC_GetResetCalibrationStatus(ADC1));
-  /* Start ADC2 calibration */
+  /* Start ADC1 calibration */
   ADC_StartCalibration(ADC1);
-  /* Check the end of ADC2 calibration */
+  /* Check the end of ADC1 calibration */
   while(ADC_GetCalibrationStatus(ADC1));
 	/*** Инициализация АЦП 1 ***/
 	
@@ -368,7 +415,7 @@ void SPIInit(void)
   SPI_InitStructure.SPI_CPOL = SPI_CPOL_Low;
   SPI_InitStructure.SPI_CPHA = SPI_CPHA_2Edge;
   SPI_InitStructure.SPI_NSS = SPI_NSS_Soft;
-  SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_2;
+  SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_16;
   SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
   SPI_InitStructure.SPI_CRCPolynomial = 5;
   SPI_Init(SPI1, &SPI_InitStructure);

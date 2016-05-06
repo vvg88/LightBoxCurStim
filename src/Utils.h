@@ -26,7 +26,7 @@ void StartStim(void);
 void InitStim(void);
 void StopStim(void);
 void SendCommToPeriph(uint16_t modType, uint16_t command);
-void SetStimAmpl(int16_t amplVal, bool useSoftWareTrig);
+void SetStimAmpl(int16_t amplVal, bool useSoftWareTrig, bool setRange);
 void SaveLastRstReason(void);
 void InitQueues(void);
 bool EnQueue(uint8_t priority, uint16_t value);

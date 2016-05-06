@@ -2,6 +2,7 @@
 #include "CommHandlers.h"
 
 extern void DevInit(void);
+extern ModuleStateType ModuleState;
 
 /* Версии:
 	 1 - версия данной структуры
@@ -19,18 +20,20 @@ TBlockInfo BlockVersions =
 int main(void)
 {
 	TCommReply Command = {0};		// Reply = {0};
-	
-	//uint8_t commBuff[260];
-	//const uint8_t * pReplyBuff = 0;
-	//size_t replySize = 0, commSize = 0;
-	
-	DBGMCU->CR = /*DBGMCU_CR_DBG_TIM2_STOP | DBGMCU_CR_DBG_TIM3_STOP | DBGMCU_CR_DBG_TIM4_STOP |*/ DBGMCU_CR_DBG_TIM1_STOP | DBGMCU_CR_DBG_TIM8_STOP;
+		
+	//DBGMCU->CR = /*DBGMCU_CR_DBG_TIM2_STOP | DBGMCU_CR_DBG_TIM3_STOP | DBGMCU_CR_DBG_TIM4_STOP |*/ DBGMCU_CR_DBG_TIM1_STOP | DBGMCU_CR_DBG_TIM8_STOP;
 	SaveLastRstReason();
 	DevInit();
+	SetStimAmpl(0, true, true);
 	StimTabInit();
 	
-//	USART_SendData(USART1, 0x55);
-//	while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+	////////////////////////////
+	// Установить активный режим
+//	ActiveModeInit();
+//	ModuleState = ACTIVE;
+//	StartStim();				// Старт стимуляции
+	////////////////////////////
+
 	while (1)
 	{
 		GetCommand((uint8_t*)&Command);
