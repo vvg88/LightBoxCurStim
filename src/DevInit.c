@@ -10,6 +10,7 @@ void AdcInit(void);
 void DacInit(void);
 void SPIInit(void);
 void DMAInit(void);
+void EXTIInit(void);
 
 extern uint8_t SynchroSignal;
 
@@ -24,6 +25,7 @@ void DevInit()
 	DacInit();
 	SPIInit();
 	DMAInit();
+	EXTIInit();
 } 
 
 /**
@@ -43,7 +45,7 @@ void RCC_Init(void)
 	RCC_PCLK1Config(RCC_HCLK_Div8);
 	
 	/* Установка тактирования таймера 6 */
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 | RCC_APB1Periph_USART2, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 | RCC_APB1Periph_USART2 | RCC_APB1Periph_TIM5, ENABLE);
 	/* Разрешить тактирование DMA1 */
  	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA2, ENABLE);
 	/* Выбор источника сигнала на линии MCO */
@@ -72,9 +74,9 @@ void GPIOinit(void)
 	GPIO_Init(GPIOA, &GpioInitStruct);
 	
 	/* Вход 1 таймера 1 */
-	GpioInitStruct.GPIO_Pin = GPIO_Pin_8;
-	GpioInitStruct.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-	GPIO_Init(GPIOA, &GpioInitStruct);
+//	GpioInitStruct.GPIO_Pin = GPIO_Pin_8;
+//	GpioInitStruct.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+//	GPIO_Init(GPIOA, &GpioInitStruct);
 	
 	/* Выходы 2 и 3 таймера 8 */
 	GpioInitStruct.GPIO_Pin = GPIO_Pin_7 | GPIO_Pin_8;
@@ -138,6 +140,20 @@ void GPIOinit(void)
 	GPIO_Init(GPIOB, &GpioInitStruct);
 	/* Connect EXTI9 Line to PB.09 pin */
   GPIO_EXTILineConfig(GPIO_PortSourceGPIOB, GPIO_PinSource9);
+	
+	/* Настройка входа внешнего прерывания
+	(Используется для запуска отсчета стимулов) */
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_12;
+  GpioInitStruct.GPIO_Mode = GPIO_Mode_IPD;
+	GPIO_Init(GPIOC, &GpioInitStruct);
+	/* Connect EXTI12 Line to PС.12 pin */
+  GPIO_EXTILineConfig(GPIO_PortSourceGPIOC, GPIO_PinSource12);
+	
+	/* Выход сброса микросхемы watchdog CUR-WDI */
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_0;
+	GpioInitStruct.GPIO_Mode = GPIO_Mode_Out_PP;
+  GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOC, &GpioInitStruct);
 }
 
 /**
@@ -186,6 +202,23 @@ void TIMsInit(void)
 	/* Структура инициализации регистра BDTR TIM8 */
 	TIM_BDTRInitTypeDef BdtrInitStruct;
 	
+	// TIM5 Отсчитывает интервал до следующего стимула
+	/***************** Инициализация таймера TIM5 *******************/
+	
+	TimeBaseStruct.TIM_Period = 20;
+  TimeBaseStruct.TIM_Prescaler = 12e3 - 1;
+  TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
+  TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
+	TimeBaseStruct.TIM_RepetitionCounter = 0;
+	/* Инициализация таймера */
+  TIM_TimeBaseInit(TIM5, &TimeBaseStruct);
+	
+	TIM_ARRPreloadConfig(TIM5, ENABLE);
+	/* Выходным сигналом триггера установить сигнал Update */
+	TIM_SelectOutputTrigger(TIM5, TIM_TRGOSource_Update);
+	
+	/***************** Инициализация таймера TIM5 *******************/
+	
 	// TIM1 Отсчитывает период импульсов в трейне
 	/***************** Инициализация таймера TIM1 *******************/
 	TimeBaseStruct.TIM_Prescaler = 47;		//48e3;47999;
@@ -219,11 +252,11 @@ void TIMsInit(void)
 	
 	/* Установка для таймера TIM1 однократной перезагрузки */
 	TIM_SelectOnePulseMode(TIM1, TIM_OPMode_Single);
-	
-	TIM_SelectOutputTrigger(TIM1, TIM_TRGOSource_Enable);
-	// Сигнал запуска со входа 1
-	TIM_SelectInputTrigger(TIM1, TIM_TS_ITR0); //TIM_TS_TI1F_ED
 	// Сигнал разрешения - выход триггера
+	TIM_SelectOutputTrigger(TIM1, TIM_TRGOSource_Enable);
+	// Сигнал запуска от тайймера 5
+	TIM_SelectInputTrigger(TIM1, TIM_TS_ITR0); //TIM_TS_TI1F_ED
+	
 	TIM_SelectSlaveMode(TIM1, TIM_SlaveMode_Trigger);		
 	// Установить бит MSM для синхронизации с TIM8
 	TIM_SelectMasterSlaveMode(TIM1, TIM_MasterSlaveMode_Enable);	
@@ -303,6 +336,22 @@ void TIMsInit(void)
 	/* Инициализация таймера */
   TIM_TimeBaseInit(TIM6, &TimeBaseStruct);
 	/***************** Инициализация таймера TIM6 *******************/
+	
+	/***************** Инициализация таймера TIM5 *******************/
+	
+//	TimeBaseStruct.TIM_Period = 20;
+//  TimeBaseStruct.TIM_Prescaler = 12e3 - 1;
+//  TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
+//  TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
+//	TimeBaseStruct.TIM_RepetitionCounter = 0;
+//	/* Инициализация таймера */
+//  TIM_TimeBaseInit(TIM5, &TimeBaseStruct);
+//	
+//	TIM_ARRPreloadConfig(TIM5, ENABLE);
+//	/* Выходным сигналом триггера установить сигнал Update */
+//	TIM_SelectOutputTrigger(TIM5, TIM_TRGOSource_Update);
+	
+	/***************** Инициализация таймера TIM5 *******************/
 }
 
 /**
@@ -313,29 +362,49 @@ void TIMsInit(void)
 void NVICinit(void)
 {
 	NVIC_InitTypeDef NVICinitStruct;
+	
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
+		
 	// Разрешить прерывание от обновления TIM1
 	NVICinitStruct.NVIC_IRQChannel = TIM1_UP_IRQn;
+	NVICinitStruct.NVIC_IRQChannelPreemptionPriority = 0;
+	NVICinitStruct.NVIC_IRQChannelSubPriority = 3;
 	NVICinitStruct.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&NVICinitStruct);
 	
 	// Разрешить прерывание от триггера TIM8
 	NVICinitStruct.NVIC_IRQChannel = TIM8_TRG_COM_IRQn;
+	NVICinitStruct.NVIC_IRQChannelPreemptionPriority = 0;
+	NVICinitStruct.NVIC_IRQChannelSubPriority = 1;
 	NVIC_Init(&NVICinitStruct);
 	
 	// Разрешить прерывание от OC1 TIM8
 	NVICinitStruct.NVIC_IRQChannel = TIM8_CC_IRQn;
+	NVICinitStruct.NVIC_IRQChannelPreemptionPriority = 0;
+	NVICinitStruct.NVIC_IRQChannelSubPriority = 2;
 	NVIC_Init(&NVICinitStruct);
 	
 	// Разрешить прерывание от TIM6
 	NVICinitStruct.NVIC_IRQChannel = TIM6_IRQn;
+	NVICinitStruct.NVIC_IRQChannelPreemptionPriority = 1;
+	NVICinitStruct.NVIC_IRQChannelSubPriority = 0;
 	NVIC_Init(&NVICinitStruct);
 	
 	// Разрешить прерывание от USART2
 	NVICinitStruct.NVIC_IRQChannel = USART2_IRQn;
+	NVICinitStruct.NVIC_IRQChannelPreemptionPriority = 1;
+	NVICinitStruct.NVIC_IRQChannelSubPriority = 1;
 	NVIC_Init(&NVICinitStruct);
 	
 	// Разрешить прерывание от ADC2
 	NVICinitStruct.NVIC_IRQChannel = ADC1_2_IRQn;
+	NVICinitStruct.NVIC_IRQChannelPreemptionPriority = 0;
+	NVICinitStruct.NVIC_IRQChannelSubPriority = 4;
+	NVIC_Init(&NVICinitStruct);
+	
+	NVICinitStruct.NVIC_IRQChannel = EXTI15_10_IRQn;
+	NVICinitStruct.NVIC_IRQChannelPreemptionPriority = 0;
+	NVICinitStruct.NVIC_IRQChannelSubPriority = 0;
 	NVIC_Init(&NVICinitStruct);
 }
 
@@ -443,4 +512,18 @@ void DMAInit(void)
   DMA_Init(DMA2_Channel2, &DMA_InitStructure);
 	
 	DMA_Cmd(DMA2_Channel2, ENABLE);
+}
+
+void EXTIInit(void)
+{
+	EXTI_InitTypeDef EXTIInitStruc;
+	
+	EXTIInitStruc.EXTI_Line = EXTI_Line12;
+	EXTIInitStruc.EXTI_LineCmd = ENABLE;
+	EXTIInitStruc.EXTI_Mode = EXTI_Mode_Interrupt;
+	EXTIInitStruc.EXTI_Trigger = EXTI_Trigger_Rising;
+	
+	EXTI_Init(&EXTIInitStruc);
+	EXTIInitStruc.EXTI_LineCmd = DISABLE;
+	EXTI_Init(&EXTIInitStruc);
 }

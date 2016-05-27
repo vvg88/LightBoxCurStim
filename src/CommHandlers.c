@@ -17,11 +17,11 @@ TStimTabItem StimTabOne[32];
 TStimTabItem StimTabTwo[32];
 
 /* Указатель на таблицу стимуляции, по которой ведется стимуляция */
-/*const*/ TStimTabItem * pUsedStimTab;
+/*const*/ TStimTabItem * pUsedStimTab = StimTabOne;
 /* Количество обходимых элементов в таблице стимуляции */
 __IO uint8_t UsedStimTabItemsNum = 0;
 /* Признак, что таблица была переписана */
-bool TabWasChanged = false;
+//bool TabWasChanged = false;
 /* Признак, что таблица была проверена. Стимуляция не запустится без проверки */
 bool TabWasChecked = true;
 /* Количество стимулов */
@@ -41,6 +41,7 @@ void SetSecImpDuration(const TCommReply * const comm);
 void SetTrainImpPeriod(const TCommReply * const comm);
 void CheckStimTable(const TCommReply * const comm);
 void StartStimulation(const TCommReply * const comm);
+void SetStimInterval(const TCommReply * const comm);
 
 void ReturnStatus(const TStatus stat);
 void ReturnValue(const uint8_t cmd, const uint16_t value);
@@ -51,7 +52,21 @@ void SendReply(const uint8_t * const buff, size_t length);
 /* Обработчики коротких команд */
 const TcommHandler CommHandlers[15] =
 {
-	StatReqHandler, SaveT0handler, SaveT1handler, SetFirstAmp, SetSecAmp, SetTrainImpCount, SetOutNum, SetFirstImpDuration, SetSecImpDuration, SetTrainImpPeriod, CheckStimTable, StartStimulation, 0, 0, InfoReqHandler,
+	StatReqHandler,
+	SaveT0handler,
+	SaveT1handler,
+	SetFirstAmp,
+	SetSecAmp,
+	SetTrainImpCount,
+	SetOutNum,
+	SetFirstImpDuration,
+	SetSecImpDuration,
+	SetTrainImpPeriod,
+	CheckStimTable,
+	StartStimulation,
+	SetStimInterval,
+	0,
+	InfoReqHandler,
 };
 
 /* Обработчики длинных команд */
@@ -158,12 +173,12 @@ void SaveT1handler(const TCommReply * const comm)
 void SetFirstAmp(const TCommReply * const comm)
 {
 	// Определить индекс изменяемой таблицы
-	TStimTabItem * const pChangedTab = (TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	TStimTabItem * const pChangedTab = pUsedStimTab;	//(TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
 	
 	if (T0 <= 31)		// Проверить индекс
 	{
 		if (T0 <= UsedStimTabItemsNum - 1)
-		{
+		{			
 			if (!IS_AMPL_OK((int16_t)comm->commParam))		// Проверить устанавливаемое значение
 				ReturnError(STIM_TABLE_ERROR(T0, WRONG_FIR_AMPL, OVERVALUED));
 			else
@@ -183,7 +198,7 @@ void SetFirstAmp(const TCommReply * const comm)
 void SetSecAmp(const TCommReply * const comm)
 {
 	// Определить индекс изменяемой таблицы
-	TStimTabItem * const pChangedTab = (TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	TStimTabItem * const pChangedTab = pUsedStimTab;	//(TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
 	
 	if (T0 <= 31)		// Проверить индекс
 	{
@@ -208,14 +223,29 @@ void SetSecAmp(const TCommReply * const comm)
 void SetTrainImpCount(const TCommReply * const comm)
 {
 	// Определить индекс изменяемой таблицы
-	TStimTabItem * const pChangedTab = (TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	TStimTabItem * const pChangedTab = pUsedStimTab;	//(TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	uint8_t nextIndx;
+	uint16_t stimDurAdd;
 	
 	if (T0 <= 31)		// Проверить индекс
 	{
 		if (T0 <= UsedStimTabItemsNum - 1)
 		{
-			pChangedTab[T0].impCnt = (uint8_t)comm->commParam;
-			ReturnStatus(ST_OK);
+			nextIndx = (T0 + 1 == UsedStimTabItemsNum) ? 0 : T0 + 1;
+			stimDurAdd = ((pChangedTab[T0].outNum & ~0x80) != (pChangedTab[nextIndx].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			
+			if ((T0 < UsedStimTabItemsNum - 1) && !IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pChangedTab[T0].firstDur + pChangedTab[T0].secDur, pChangedTab[T0].impPeriod, comm->commParam) + stimDurAdd, pChangedTab[T0].stimInterval * 1e3))	// Проверить, что длит-ть стимула не превышает межстимульного интервала
+				ReturnError(STIM_TABLE_ERROR(T0, WRONG_STIMDUR_STIMINTERV, OVERVALUED));
+			else
+			{
+				if (((uint8_t)comm->commParam > 0) && !IS_DUR_PERIOD_OK((pChangedTab[T0].secDur + pChangedTab[T0].firstDur), pChangedTab[T0].impPeriod))
+					ReturnError(STIM_TABLE_ERROR(T0, WRONG_DUR_PERIOD, OVERVALUED));
+				else
+				{
+					pChangedTab[T0].impCnt = (uint8_t)comm->commParam;
+					ReturnStatus(ST_OK);
+				}
+			}
 		}
 		else
 			ReturnStatus(STIM_TAB_INDX_OUT_OF_USED_RANGE);
@@ -228,18 +258,33 @@ void SetTrainImpCount(const TCommReply * const comm)
 void SetOutNum(const TCommReply * const comm)
 {
 	// Определить индекс изменяемой таблицы
-	TStimTabItem * const pChangedTab = (TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	TStimTabItem * const pChangedTab = pUsedStimTab;	//(TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	//uint8_t nextIndx, prevIndx;
+	uint16_t stimDurAddNext, stimDurAddPrev;
 	
 	if (T0 <= 31)		// Проверить индекс
 	{
 		if (T0 <= UsedStimTabItemsNum - 1)
-		{
+		{			
+			stimDurAddNext = ((comm->commParam & ~0x80) != (pChangedTab[T0 + 1].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			stimDurAddPrev = ((comm->commParam & ~0x80) != (pChangedTab[T0 - 1].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			
 			if (!IS_NUMOUT_OK(comm->commParam))
 				ReturnError(STIM_TABLE_ERROR(T0, WRONG_OUTPUT, OVERVALUED));
 			else
 			{
-				pChangedTab[T0].outNum = (uint8_t)comm->commParam;
-				ReturnStatus(ST_OK);
+				if ((T0 < UsedStimTabItemsNum - 1) && !IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pChangedTab[T0].secDur + pChangedTab[T0].firstDur, pChangedTab[T0].impPeriod, pChangedTab[T0].impCnt) + stimDurAddNext, pChangedTab[T0].stimInterval * 1e3))	// Проверить, что длит-ть стимула не превышает межстимульного интервала 
+					ReturnError(STIM_TABLE_ERROR(T0, WRONG_STIMDUR_STIMINTERV, OVERVALUED));
+				else
+				{
+					if ((T0 > 0) && !IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pChangedTab[T0 - 1].secDur + pChangedTab[T0 - 1].firstDur, pChangedTab[T0 - 1].impPeriod, pChangedTab[T0 - 1].impCnt) + stimDurAddPrev, pChangedTab[T0 - 1].stimInterval * 1e3))	// Проверить, что длит-ть стимула не превышает межстимульного интервала 
+						ReturnError(STIM_TABLE_ERROR(T0 - 1, WRONG_STIMDUR_STIMINTERV, OVERVALUED));
+					else
+					{
+						pChangedTab[T0].outNum = (uint8_t)comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+				}
 			}
 		}
 		else
@@ -253,18 +298,33 @@ void SetOutNum(const TCommReply * const comm)
 void SetFirstImpDuration(const TCommReply * const comm)
 {
 	// Определить индекс изменяемой таблицы
-	TStimTabItem * const pChangedTab = (TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	TStimTabItem * const pChangedTab = pUsedStimTab;	//(TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	//uint8_t nextIndx;
+	uint16_t stimDurAdd;
 	
 	if (T0 <= 31)		// Проверить индекс
 	{
 		if (T0 <= UsedStimTabItemsNum - 1)
 		{
+			//nextIndx = (T0 + 1 == UsedStimTabItemsNum) ? 0 : T0 + 1;
+			stimDurAdd = ((pChangedTab[T0].outNum & ~0x80) != (pChangedTab[T0 + 1].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			
 			if (!IS_DURATION_OK(comm->commParam))		// Проверить устанавливаемое значение
 				ReturnError(STIM_TABLE_ERROR(T0, WRONG_FIR_IMP_DURATION, comm->commParam > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED));
 			else
 			{
-				pChangedTab[T0].firstDur = comm->commParam;
-				ReturnStatus(ST_OK);
+				if ((pChangedTab[T0].impCnt > 0) && !IS_DUR_PERIOD_OK((pChangedTab[T0].secDur + comm->commParam), pChangedTab[T0].impPeriod)) //+ IMP_DURATION_ADD(pChangedTab[T0].firstAmp)
+					ReturnError(STIM_TABLE_ERROR(T0, WRONG_DUR_PERIOD, OVERVALUED));
+				else
+				{
+					if ((T0 < UsedStimTabItemsNum - 1) && !IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pChangedTab[T0].secDur + comm->commParam, pChangedTab[T0].impPeriod, pChangedTab[T0].impCnt) + stimDurAdd, pChangedTab[T0].stimInterval * 1e3))	// Проверить, что длит-ть стимула не превышает межстимульного интервала //+ IMP_DURATION_ADD(pChangedTab[T0].firstAmp)
+						ReturnError(STIM_TABLE_ERROR(T0, WRONG_STIMDUR_STIMINTERV, OVERVALUED));
+					else
+					{
+						pChangedTab[T0].firstDur = comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+				}
 			}
 		}
 		else
@@ -278,18 +338,33 @@ void SetFirstImpDuration(const TCommReply * const comm)
 void SetSecImpDuration(const TCommReply * const comm)
 {
 	// Определить индекс изменяемой таблицы
-	TStimTabItem * const pChangedTab = (TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	TStimTabItem * const pChangedTab = pUsedStimTab;	//(TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	//uint8_t nextIndx;
+	uint16_t stimDurAdd;
 	
 	if (T0 <= 31)		// Проверить индекс
 	{
 		if (T0 <= UsedStimTabItemsNum - 1)
 		{
+			//nextIndx = (T0 + 1 == UsedStimTabItemsNum) ? 0 : T0 + 1;
+			stimDurAdd = ((pChangedTab[T0].outNum & ~0x80) != (pChangedTab[T0 + 1].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			
 			if (!IS_DURATION_OK(comm->commParam))		// Проверить устанавливаемое значение
 				ReturnError(STIM_TABLE_ERROR(T0, WRONG_FIR_IMP_DURATION, comm->commParam > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED));
 			else
 			{
-				pChangedTab[T0].secDur = comm->commParam;
-				ReturnStatus(ST_OK);
+				if ((pChangedTab[T0].impCnt > 0) && !IS_DUR_PERIOD_OK((pChangedTab[T0].firstDur + comm->commParam), pChangedTab[T0].impPeriod)) //+ IMP_DURATION_ADD(pChangedTab[T0].firstAmp)
+					ReturnError(STIM_TABLE_ERROR(T0, WRONG_DUR_PERIOD, OVERVALUED));
+				else
+				{
+					if ((T0 < UsedStimTabItemsNum - 1) && !IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pChangedTab[T0].firstDur + comm->commParam, pChangedTab[T0].impPeriod, pChangedTab[T0].impCnt) + stimDurAdd, pChangedTab[T0].stimInterval * 1e3))	// Проверить, что длит-ть стимула не превышает межстимульного интервала //+ IMP_DURATION_ADD(pChangedTab[T0].firstAmp)
+						ReturnError(STIM_TABLE_ERROR(T0, WRONG_STIMDUR_STIMINTERV, OVERVALUED));
+					else
+					{
+						pChangedTab[T0].secDur = comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+				}
 			}
 		}
 		else
@@ -303,18 +378,68 @@ void SetSecImpDuration(const TCommReply * const comm)
 void SetTrainImpPeriod(const TCommReply * const comm)
 {
 	// Определить индекс изменяемой таблицы
-	TStimTabItem * const pChangedTab = (TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	TStimTabItem * const pChangedTab = pUsedStimTab;	//(TabWasChanged & (ModuleState == ACTIVE)) ? ((pUsedStimTab == StimTabOne) ? StimTabTwo : StimTabOne) : pUsedStimTab;
+	//uint8_t nextIndx;
+	uint16_t stimDurAdd;
 	
 	if (T0 <= 31)		// Проверить индекс
 	{
 		if (T0 <= UsedStimTabItemsNum - 1)
 		{
+			//nextIndx = (T0 + 1 == UsedStimTabItemsNum) ? 0 : T0 + 1;
+			stimDurAdd = ((pChangedTab[T0].outNum & ~0x80) != (pChangedTab[T0 + 1].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			
 			if (!IS_PERIOD_OK(comm->commParam))
 				ReturnError(STIM_TABLE_ERROR(T0, WRONG_IMP_PERIOD, comm->commParam > IMP_PERIOD_MAX ? OVERVALUED : UNDERVALUED));
 			else
 			{
-				pChangedTab[T0].impPeriod = comm->commParam;
-				ReturnStatus(ST_OK);
+				if ((pChangedTab[T0].impCnt > 0) && !IS_DUR_PERIOD_OK((pChangedTab[T0].firstDur + pChangedTab[T0].secDur), comm->commParam)) //+ IMP_DURATION_ADD(pChangedTab[T0].firstAmp)
+					ReturnError(STIM_TABLE_ERROR(T0, WRONG_DUR_PERIOD, OVERVALUED));
+				else
+				{
+					if ((T0 < UsedStimTabItemsNum - 1) && !IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pChangedTab[T0].firstDur + pChangedTab[T0].secDur, comm->commParam, pChangedTab[T0].impCnt) + stimDurAdd, pChangedTab[T0].stimInterval * 1e3))	// Проверить, что длит-ть стимула не превышает межстимульного интервала //+ IMP_DURATION_ADD(pChangedTab[T0].firstAmp
+						ReturnError(STIM_TABLE_ERROR(T0, WRONG_STIMDUR_STIMINTERV, OVERVALUED));
+					else
+					{
+						pChangedTab[T0].impPeriod = comm->commParam;
+						ReturnStatus(ST_OK);
+					}
+				}
+			}
+		}
+		else
+			ReturnStatus(STIM_TAB_INDX_OUT_OF_USED_RANGE);
+	}
+	else
+		ReturnStatus(STIM_TAB_INDX_OUT_OF_RANGE);
+}
+
+// Установить параметр "Интервал до следующего стимула"
+void SetStimInterval(const TCommReply * const comm)
+{
+	// Определить индекс изменяемой таблицы
+	TStimTabItem * const pChangedTab = pUsedStimTab;
+	//uint8_t nextIndx;
+	uint16_t stimDurAdd;
+	
+	if (T0 <= 31)		// Проверить индекс
+	{
+		if (T0 <= UsedStimTabItemsNum - 1)
+		{
+			//nextIndx = (T0 + 1 == UsedStimTabItemsNum) ? 0 : T0 + 1;
+			stimDurAdd = ((pChangedTab[T0].outNum & ~0x80) != (pChangedTab[T0 + 1].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			
+			if (!IS_STIM_INTERV_OK(comm->commParam))		// Проверить устанавливаемое значние
+				ReturnError(STIM_TABLE_ERROR(T0, WRONG_STIM_INTERVAL, comm->commParam > STIM_INTERV_MAX ? OVERVALUED : UNDERVALUED));
+			else
+			{
+				if ((T0 < UsedStimTabItemsNum - 1) && !IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pChangedTab[T0].firstDur + pChangedTab[T0].secDur, pChangedTab[T0].impPeriod, pChangedTab[T0].impCnt) + stimDurAdd, comm->commParam * 1e3))	// Проверить, что длит-ть стимула не превышает межстимульного интервала //+ IMP_DURATION_ADD(pChangedTab[T0].firstAmp)
+					ReturnError(STIM_TABLE_ERROR(T0, WRONG_STIMDUR_STIMINTERV, OVERVALUED));
+				else
+				{
+					pChangedTab[T0].stimInterval = comm->commParam;
+					ReturnStatus(ST_OK);
+				}
 			}
 		}
 		else
@@ -333,7 +458,7 @@ void CheckStimTable(const TCommReply * const comm)
 	{
 		if ((comm->commParam > 0) && (comm->commParam <= 32))
 		{
-			stimTabErr = CheckStimTab(pUsedStimTab == StimTabOne ? StimTabTwo : StimTabOne, comm->commParam);
+			stimTabErr = CheckStimTab(pUsedStimTab /*== StimTabOne ? StimTabTwo : StimTabOne*/, comm->commParam);
 			if (stimTabErr != ST_OK)
 				ReturnError(stimTabErr);
 			else
@@ -406,18 +531,19 @@ void LoadStimTabHandler(const TCommReply * const comm)
 {
 	uint8_t * pFirstElem = 0;		// Указатель на элемент таблицы стимуляции с которого производится ее обновление
 	
-	if (ModuleState != PASSIVE)
+	if (ModuleState == ACTIVE)	//ModuleState != PASSIVE
 	{
 		/* Сохранить адрес начального элемента для той таблицы, по которой сейчас нет стимуляции.
 		 * Индекс начального элемента сохранен в 0-ом байте переданного массива данных */
-		pFirstElem = (pUsedStimTab == StimTabOne) ? (uint8_t *)(&StimTabTwo[comm->commData[0]]) : (uint8_t *)(&StimTabOne[comm->commData[0]]);
+		//pFirstElem = (pUsedStimTab == StimTabOne) ? (uint8_t *)(&StimTabTwo[comm->commData[0]]) : (uint8_t *)(&StimTabOne[comm->commData[0]]);
+		pFirstElem = (uint8_t *)(&pUsedStimTab[comm->commData[0]]);
 		
 		if ((comm->commLen - 1) % sizeof(TStimTabItem) == 0)
 		{
 			for (int i = 1; i < comm->commLen; i++)		// Проверить, что элементы таблицы стимуляции были переданы полностью
 				pFirstElem[i - 1] = comm->commData[i];		// Скопировать данные во временную таблицу при успешной проверке 
 			ReturnStatus(ST_OK);
-			TabWasChanged = true;
+			//TabWasChanged = true;
 			TabWasChecked = false;
 		}
 		else
@@ -590,13 +716,14 @@ void StimTabInit()
 {
 	for (int i = 0; i < 32; i++)
 	{
-		StimTabOne[i].impCnt = StimTabTwo[i].impCnt = 2;
+		StimTabOne[i].impCnt = StimTabTwo[i].impCnt = 0;
 		StimTabOne[i].outNum = StimTabTwo[i].outNum = 0;
 		StimTabOne[i].firstAmp = StimTabTwo[i].firstAmp = 100;
 		StimTabOne[i].secAmp = StimTabTwo[i].secAmp = 100;
-		StimTabOne[i].firstDur = StimTabTwo[i].firstDur = 0;
-		StimTabOne[i].secDur = StimTabTwo[i].secDur = 100;
-		StimTabOne[i].impPeriod = StimTabTwo[i].impPeriod = 10;
+		StimTabOne[i].firstDur = StimTabTwo[i].firstDur = 100;
+		StimTabOne[i].secDur = StimTabTwo[i].secDur = 0;
+		StimTabOne[i].impPeriod = StimTabTwo[i].impPeriod = 2000;
+		StimTabOne[i].stimInterval = StimTabTwo[i].stimInterval = 20;
 	}
 	UsedStimTabItemsNum = 32;
 	pUsedStimTab = StimTabOne;

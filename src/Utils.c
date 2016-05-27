@@ -9,7 +9,7 @@ extern TStimTabItem StimTabOne[32];
 extern TStimTabItem StimTabTwo[32];
 extern TStimTabItem * pUsedStimTab;
 extern __IO uint8_t UsedStimTabItemsNum;
-extern bool TabWasChanged;
+//extern bool TabWasChanged;
 extern __IO uint16_t StimCount;
 extern ModuleStateType ModuleState;
 
@@ -18,7 +18,7 @@ TStatus LastResReason;
 /* Очередь событий. Представляет собой массив очередей (в каждой очереди хранятся события одного определенного приоритета) */
 EventsQueueStruct EventsQueue[4];
 /* Индекс текущего элемента таблицы стимуляции */
-__IO uint8_t StimIndex;
+__IO uint8_t StimIndex = 0;
 /* Признак бифазного стимула */
 __IO bool IsStimBiPhase;
 /* Байт с синхросигналом стимулятора */
@@ -43,6 +43,8 @@ void ActiveModeInit(void)
 // Проверка таблицы стимуляции
 uint16_t CheckStimTab(const TStimTabItem * const pCheckedTab, uint8_t tabItemsNum)
 {
+	uint8_t nextIndx;
+	uint16_t stimDurAdd;
 	for (int i = 0; i < tabItemsNum; i++)
 	{		
 		if (!IS_AMPL_OK(pCheckedTab[i].firstAmp))
@@ -57,6 +59,20 @@ uint16_t CheckStimTab(const TStimTabItem * const pCheckedTab, uint8_t tabItemsNu
 			return STIM_TABLE_ERROR(i, WRONG_SEC_IMP_DURATION, pCheckedTab[i].secDur > IMP_DURATION_MAX ? OVERVALUED : UNDERVALUED);
 		if (!IS_PERIOD_OK(pCheckedTab[i].impPeriod))
 			return STIM_TABLE_ERROR(i, WRONG_IMP_PERIOD, pCheckedTab[i].impPeriod > IMP_PERIOD_MAX ? OVERVALUED : UNDERVALUED);
+		if (!IS_STIM_INTERV_OK(pCheckedTab[i].stimInterval))
+			return STIM_TABLE_ERROR(i, WRONG_STIM_INTERVAL, pCheckedTab[i].stimInterval > STIM_INTERV_MAX ? OVERVALUED : UNDERVALUED);
+		
+		if ((pCheckedTab[i].impCnt > 0) && !IS_DUR_PERIOD_OK((pCheckedTab[i].firstDur + pCheckedTab[i].secDur), pCheckedTab[i].impPeriod)) //+ IMP_DURATION_ADD(pCheckedTab[i].firstAmp
+			return STIM_TABLE_ERROR(i, WRONG_DUR_PERIOD, OVERVALUED);
+		
+		nextIndx = i + 1;		//(i + 1 == tabItemsNum) ? 0 : i + 1;
+		
+		if (nextIndx < tabItemsNum)
+		{
+			stimDurAdd = ((pCheckedTab[i].outNum & ~0x80) != (pCheckedTab[nextIndx].outNum & ~0x80)) ? OUTPUT_SWITCH_TIME : MIN_STIM_DUR_INTERV_DIFF;
+			if (!IS_STIMDUR_STIMINTERV_OK(GET_STIM_DURATION(pCheckedTab[i].firstDur + pCheckedTab[i].secDur, pCheckedTab[i].impPeriod, pCheckedTab[i].impCnt) + stimDurAdd, pCheckedTab[i].stimInterval * 1e3))
+				return STIM_TABLE_ERROR(i, WRONG_STIMDUR_STIMINTERV, OVERVALUED);
+		}
 	}
 	return ST_OK;
 }
@@ -64,12 +80,12 @@ uint16_t CheckStimTab(const TStimTabItem * const pCheckedTab, uint8_t tabItemsNu
 // Запустить стимуляцию
 void StartStim(void)
 {
-	if (TabWasChanged == true)		// Если таблица стимуляции была изменена, стимулировать по измененнной таблице
+	/*if (TabWasChanged == true)		// Если таблица стимуляции была изменена, стимулировать по измененнной таблице
 	{															// на которую указывает pUsedStimTab
 		pUsedStimTab = pUsedStimTab == StimTabOne ? StimTabTwo : StimTabOne;
 		TabWasChanged = false;
-	}
-	StimIndex = 0;		// Обнулить индекс текущего элем-та
+	}*/
+	//StimIndex = 0;		// Обнулить индекс текущего элем-та
 	InitStim();
 		
 	/* Разрешить прерывания от АЦП2 (измерение тока стимула) */
@@ -87,7 +103,9 @@ void StartStim(void)
 	// Разрешить прерывание от события Update TIM1
 	TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
 	
-	TIM_SelectInputTrigger(TIM1, TIM_TS_TI1F_ED); ////TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);		// Разрешить вход захвата-сравнения №1 сигнала запуска
+	//// Разрешить вход прерывания!!!
+	EXTI->IMR |= EXTI_Line12;
+	////TIM_SelectInputTrigger(TIM1, TIM_TS_TI1F_ED); ////TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);		// Разрешить вход захвата-сравнения №1 сигнала запуска
 	
 	ModuleState = STIMULATION;
 }
@@ -96,14 +114,20 @@ void StartStim(void)
 void InitStim(void)
 {
 	// Установить период имп-ов в трейне
-	TIM_SetAutoreload(TIM1, pUsedStimTab[StimIndex].impPeriod);		/// * 1e3
-	TIM_SetCompare2(TIM1, pUsedStimTab[StimIndex].impPeriod);			/// * 1e3
+	uint16_t impPeriod = pUsedStimTab[StimIndex].impCnt == 0 ? 
+											(pUsedStimTab[StimIndex].firstDur + IMP_DURATION_ADD(pUsedStimTab[StimIndex].firstAmp) + pUsedStimTab[StimIndex].secDur + MIN_DURATION_PERIOD_DIFF)
+											: pUsedStimTab[StimIndex].impPeriod;
+	TIM_SetAutoreload(TIM1, impPeriod);		/// * 1e3
+	TIM_SetCompare2(TIM1, impPeriod);			/// * 1e3
 	
 	TIM1->RCR = pUsedStimTab[StimIndex].impCnt;		// Установить число импульсов в трейне impCnt - 1
 	TIM1->DIER &= ~TIM_DIER_UIE;									// Чтобы число имп-ов в трейне установилось сразу при изменении, а не через 1 стимул
 	TIM1->EGR |= TIM_EGR_UG;											// запретить прерывание TIM1, сгенерировать update TIM1
 	TIM1->SR &= ~TIM_SR_UIF;											// очистить флаг
 	TIM1->DIER |= TIM_DIER_UIE;										// разрешить прерывание
+	
+	// Установить интервал до следующего стимула
+	TIM5->ARR = pUsedStimTab[StimIndex].stimInterval - 1;
 	
 	// Если стимул положительный
 	if ((pUsedStimTab[StimIndex].outNum & 0x80) == 0)
@@ -181,7 +205,10 @@ void InitStim(void)
 void StopStim(void)
 {
 	while (TIM1->CR1 & TIM_CR1_CEN);										// Дождаться завершения стимула
-	TIM_SelectInputTrigger(TIM1, TIM_TS_ITR0); //TIM_TS_TI1F_ED//TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Disable);		// Запретить вход захвата-сравнения №1 сигнала запуска
+	TIM5->CR1 &= ~TIM_CR1_CEN;		// Остановить TIM5
+	/* Запретить вход внешнего прерывания */
+	EXTI->IMR &= ~EXTI_Line12;
+	//TIM_SelectInputTrigger(TIM1, TIM_TS_ITR0); //TIM_TS_TI1F_ED//TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Disable);		// Запретить вход захвата-сравнения №1 сигнала запуска
 	// Запретить выходы TIM8
 	TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Disable);
 	TIM_CCxCmd(TIM8, TIM_Channel_3, TIM_CCx_Disable);
@@ -195,7 +222,7 @@ void StopStim(void)
 	TIM_ITConfig(TIM8, TIM_IT_Trigger | TIM_IT_CC1, DISABLE);
 	// Запретить прерывание от измерения тока стимула
 	ADC_ITConfig(ADC2, ADC_IT_JEOC, DISABLE);
-	
+	StimIndex = 0;	// Обнулить индекс текущего элем-та
 	ModuleState = ACTIVE;
 }
 

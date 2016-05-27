@@ -36,7 +36,9 @@ int main(void)
 
 	while (1)
 	{
+		RESET_WATCHDOG(SET);
 		GetCommand((uint8_t*)&Command);
+		RESET_WATCHDOG(RESET);
 		CommHandler(&Command);
 		//SendReply((uint8_t*)&Reply, replySize);
 	}

@@ -85,12 +85,18 @@ void TIM1_UP_IRQHandler(void)
 	isFirstImp = true;
 	impCntr = 0;
 	TIM8->DIER |= TIM_DIER_TDE;		// Разрешить генерацию DMA запросов
-	if (++StimIndex >= UsedStimTabItemsNum)		// Изменить индекс текущего элемента
-			StimIndex = 0;
+	
 	if (IsStimBiPhase)			// Для бифазного стимула
 	{
 		IsStimBiPhase = false;
 		TIM_ITConfig(TIM8, TIM_IT_CC2 | TIM_IT_CC3, DISABLE);		// Запретить прерывания от СС2 и СС3
+	}
+	
+	if (++StimIndex >= UsedStimTabItemsNum)		// Изменить индекс текущего элемента
+	{
+		StimIndex = 0;
+		TIM5->CR1 &= ~TIM_CR1_CEN;		// Остановить TIM5
+		EXTI->IMR |= EXTI_Line12;			// Разрешить вход прерывания
 	}
 	InitStim();						// Инициализировать новый стимул
 	if (StimCount != 0)		// Если число стимулов не бесконечно (задается 0)
@@ -101,6 +107,17 @@ void TIM1_UP_IRQHandler(void)
 		}
 	}
 	k++;
+}
+
+// 
+void EXTI15_10_IRQHandler(void)
+{
+	TIM5->EGR |= TIM_EGR_UG;
+	TIM5->CR1 |= TIM_CR1_CEN;
+	/* Запретить вход внешнего прерывания */
+	EXTI->IMR &= ~EXTI_Line12;
+	/* Очистить флаг прерывания */
+	EXTI->PR |= EXTI_PR_PR0;
 }
 
 /* Счетчик для отсчета периода измерения напряжения на накопительном конденсаторе */
@@ -129,7 +146,10 @@ void TIM6_IRQHandler(void)
 		EnQueue(HIGH_VOLT_CODE, voltValue);
 		HighVoltMeasureCntr = 0;
 	}
-	SendCommToPeriph(FORK_STIM_COMM_ADR, (pUsedStimTab[StimIndex].outNum & 0x80) == 0 ? LEFT_LED_ON : RIGHT_LED_ON);
+	if ((pUsedStimTab[StimIndex].outNum & 0x7F) == 0)
+		SendCommToPeriph(FORK_STIM_COMM_ADR, (pUsedStimTab[StimIndex].outNum & 0x80) == 0 ? LEFT_LED_ON : RIGHT_LED_ON);
+	else
+		SendCommToPeriph(FORK_STIM_COMM_ADR, ALL_LEDS_OFF);
 }
 
 // Получение ответа от USART2. Ответ от вилочкового стимулятора

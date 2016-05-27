@@ -67,13 +67,14 @@ typedef struct __attribute((packed))
 /* Элемент таблицы стимуляции */
 typedef struct __attribute((packed))
 {
-	uint8_t impCnt;				// Число импульсов в трейне
-	uint8_t outNum;				// Номер выхода
-	int16_t firstAmp;			// Амплитуда первого импульса
-	int16_t secAmp;				// Амплитуда второго импульса
-	uint16_t firstDur;		// Длительность первого импульса
-	uint16_t secDur;			// Длительность второго импульса
-	uint16_t impPeriod;		// Период импульсов в трейне
+	uint8_t impCnt;					// Число импульсов в трейне
+	uint8_t outNum;					// Номер выхода
+	int16_t firstAmp;				// Амплитуда первого импульса
+	int16_t secAmp;					// Амплитуда второго импульса
+	uint16_t firstDur;			// Длительность первого импульса
+	uint16_t secDur;				// Длительность второго импульса
+	uint16_t impPeriod;			// Период импульсов в трейне
+	uint16_t stimInterval;	// Интервал Между стимулами
 } TStimTabItem;
 
 /* Тип обработчика команд */
@@ -87,12 +88,17 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define IMP_DURATION_MAX	5000		// Максимальное значение длительности импульса
 #define IMP_PERIOD_MIN		2000		// Минимальное значение периода импульсов в трейне (2 мс)
 #define IMP_PERIOD_MAX		50000		// Максимальное значение периода импульсов в трейне	(50 мс)
+#define STIM_INTERV_MIN		20			// Минимальный интервал между стимулами
+#define STIM_INTERV_MAX		5000		// Максимальный интервал между стимулами
 
-#define IS_AMPL_OK(ampVal)	 	 			(abs(ampVal) <= AMPL_MAX)															// Проверить значение амплитуды
+#define IS_AMPL_OK(ampVal)	 	 			(abs(ampVal) <= AMPL_MAX)																													// Проверить значение амплитуды
 #define IS_NUMOUT_OK(outNum) 	 			((outNum == 0) || (outNum == 1) || (outNum == 0x80) || (outNum == 0x81))					// Проверить номер выхода
 #define IS_DURATION_OK(durVal) 			((durVal == 0) || ((durVal >= IMP_DURATION_MIN) && (durVal <= IMP_DURATION_MAX)))	// Проверить значение длительности импульса
-#define IS_PERIOD_OK(perVal)	 			((perVal >= IMP_PERIOD_MIN) && (perVal <= IMP_PERIOD_MAX))			// Проверить значение периода импульсов в трейне
-#define IS_IMP_COUNT_OK(impCntVal)	((impCntVal >=0) || (impCntVal <= 255))													// Проверить значение количества импульсов в трейне
+#define IS_PERIOD_OK(perVal)	 			((perVal >= IMP_PERIOD_MIN) && (perVal <= IMP_PERIOD_MAX))												// Проверить значение периода импульсов в трейне
+#define IS_IMP_COUNT_OK(impCntVal)	((impCntVal >= 0) || (impCntVal <= 255))																					// Проверить значение количества импульсов в трейне
+#define IS_STIM_INTERV_OK(stimIntervVal) ((stimIntervVal >= STIM_INTERV_MIN) && (stimIntervVal <= STIM_INTERV_MAX))		// Проверить значение 
+#define IS_DUR_PERIOD_OK(durVal, perVal) ((durVal + MIN_DURATION_PERIOD_DIFF) <= perVal)																// Проверить, что в трейне длительность импульсов меньше их периода
+#define IS_STIMDUR_STIMINTERV_OK(stimDurVal, stimIntervVal) (stimDurVal <= stimIntervVal)							// Проверить, что длительность стимула меньше интервала до следующего стимула
 
 #define UNDERVALUED 0
 #define OVERVALUED 	1
@@ -106,6 +112,9 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define WRONG_IMP_PERIOD					5		// Неверное значение периода импульсов в трейне
 #define WRONG_OUTPUT							6		// Неверное значение номера выхода коммутатора
 #define WRONG_IMPCNTR							7		// Неверное значение количества импульсов в трейне
+#define WRONG_STIM_INTERVAL				8		// Неверное значение интервала до след-го стимула
+#define WRONG_DUR_PERIOD					9		// Неверное значение длительности или периода имп-ов в трейне (имп-сы накладываются друг на друга)
+#define WRONG_STIMDUR_STIMINTERV	10	// Неверное значение длительности стимула или межстимульного инервала (стимулы наложатся друг на друга)
 
 /* Макрос, возвращающий код ошибки при проверке таблицы стимуляции.
  * Возвращаются 2 байта. Структура их следующая:
@@ -147,6 +156,14 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 /* Макрос получения байта для синхросигнала */
 #define MAKE_SYNCHRO_SIGNAL(val) ((val << 2) | (0x80))
 
+/* Время переключения реле, задающих полярность.
+ * Определяется как Ton_max + Toff_max = 500 мкс + 200 мкс = 700 мкс. */
+ #define OUTPUT_SWITCH_TIME 700
+ /* Минимальная разница длительности и периода импульсов в трейне */
+#define MIN_DURATION_PERIOD_DIFF 100
+/* Минимальная разница длительности стимула и интервала до след стимула */
+#define MIN_STIM_DUR_INTERV_DIFF 200
+
 /* Поправка на длительности стимулов, зависящая от амплитуды
 	 * |>0,4 мА|6  мкс|
 	 * |0,3 мА |8  мкс|
@@ -154,6 +171,11 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 	 * |0,1 мА |27 мкс|
 	 */
 	 #define IMP_DURATION_ADD(stimAmp) ((stimAmp < -30) ? 6 : ((stimAmp == -30) ? 14 : ((stimAmp == -20) ? 20 : ((stimAmp == -10) ? 33 : 6))))
+	 
+#define GET_STIM_DURATION(impDur, impPeriod, impCount) ((impPeriod * impCount) + impDur)
+
+/* Управление выводом сброса микросхемы watchdog */
+#define RESET_WATCHDOG(newState) ((newState == SET) ? (GPIOC->BSRR = GPIO_Pin_0) : (GPIOC->BRR = GPIO_Pin_0))
 
 int16_t GetMaxAmp(const TStimTabItem * const stimTabItem);
 
