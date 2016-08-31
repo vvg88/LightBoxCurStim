@@ -122,7 +122,7 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define STIM_TABLE_ERROR(elemNum, code, type) ((0x7000) | (elemNum << ELEMENT_NUM_OFFSET) | (code << ERROR_CODE_OFFSET) | (type))
 
 /* Макрос включения-отключения умножителя напряжения для зарядки накопительного конденсатора */
-#define HIGH_VOLTAGE(state) ((state == DISABLE) ? (GPIOC->BSRR |= GPIO_BSRR_BS5) : (GPIOC->BRR |= GPIO_BRR_BR5))
+#define HIGH_VOLTAGE(state) ((state == DISABLE) ? (GPIOB->BSRR |= GPIO_BSRR_BS12) : (GPIOB->BRR |= GPIO_BRR_BR12))
 /* Управление включением первого выхода */
 #define OUT1_ENABLE(state) ((state == DISABLE) ? (GPIOC->BSRR |= GPIO_BSRR_BS9) : (GPIOC->BRR |= GPIO_BRR_BR9))
 /* Управление включением второго выхода */
@@ -175,7 +175,7 @@ typedef void (*TcommHandler)(const TCommReply * const comm);
 #define GET_STIM_DURATION(impDur, impPeriod, impCount) ((impPeriod * impCount) + impDur)
 
 /* Управление выводом сброса микросхемы watchdog */
-#define RESET_WATCHDOG(newState) ((newState == SET) ? (GPIOC->BSRR = GPIO_Pin_0) : (GPIOC->BRR = GPIO_Pin_0))
+#define RESET_WATCHDOG(newState) ((newState == SET) ? (GPIOA->BSRR = GPIO_Pin_1) : (GPIOA->BRR = GPIO_Pin_1))
 
 int16_t GetMaxAmp(const TStimTabItem * const stimTabItem);
 

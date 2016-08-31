@@ -37,7 +37,7 @@ void RCC_Init(void)
 {
 	/* Установка тактирования порта А, порта В и С, таймеров 1 и 8, АЦП1, АЦП2, АЦП3 */
  	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO | RCC_APB2Periph_USART1 | RCC_APB2Periph_TIM8 | RCC_APB2Periph_TIM1 | RCC_APB2Periph_GPIOC |
-												 RCC_APB2Periph_GPIOB | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2 | RCC_APB2Periph_SPI1 /*| RCC_APB2Periph_ADC3*/, ENABLE);
+												 RCC_APB2Periph_GPIOB | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2 /*RCC_APB2Periph_SPI1 | RCC_APB2Periph_ADC3*/, ENABLE);
 	/* Установить частоту тактирования АЦП 12 МГц */
 	RCC_ADCCLKConfig(RCC_PCLK2_Div4);
 	
@@ -45,7 +45,7 @@ void RCC_Init(void)
 	RCC_PCLK1Config(RCC_HCLK_Div8);
 	
 	/* Установка тактирования таймера 6 */
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 | RCC_APB1Periph_USART2 | RCC_APB1Periph_TIM5, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 | RCC_APB1Periph_USART2 | RCC_APB1Periph_TIM5 | RCC_APB1Periph_SPI2, ENABLE);
 	/* Разрешить тактирование DMA1 */
  	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA2, ENABLE);
 	/* Выбор источника сигнала на линии MCO */
@@ -85,16 +85,21 @@ void GPIOinit(void)
 	GPIO_Init(GPIOC, &GpioInitStruct);
 	
 	/* Выход CUR-STIM */
-	GpioInitStruct.GPIO_Pin = GPIO_Pin_7;
-	GPIO_Init(GPIOA, &GpioInitStruct);
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_15;
+	GPIO_Init(GPIOB, &GpioInitStruct);
 	
-	/* Выходы CUR-VHIGH-ON, CUR-OUT2-EN, CUR-OUT1-EN, CUR-HIGH-RANGE */
-	GPIO_SetBits(GPIOC, GPIO_Pin_5 | GPIO_Pin_9 | GPIO_Pin_10);		// Установить неактивное состояние на линиях
+	/* Выходы CUR-OUT2-EN, CUR-OUT1-EN, CUR-HIGH-RANGE */
+	GPIO_SetBits(GPIOC, GPIO_Pin_9 | GPIO_Pin_10);		// Установить неактивное состояние на линиях
 	GPIO_ResetBits(GPIOC, GPIO_Pin_6);
-	GpioInitStruct.GPIO_Pin = GPIO_Pin_5 | GPIO_Pin_6 | GPIO_Pin_9 | GPIO_Pin_10;
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_9 | GPIO_Pin_10;
 	GpioInitStruct.GPIO_Mode = GPIO_Mode_Out_PP;
   GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_Init(GPIOC, &GpioInitStruct);
+	
+	/* Выход CUR-VHIGH-ON */
+	GPIO_SetBits(GPIOB, GPIO_Pin_12);
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_12;
+	GPIO_Init(GPIOB, &GpioInitStruct);
 	
 	///////////////////////////////
 //	GpioInitStruct.GPIO_Pin = GPIO_Pin_9;
@@ -150,10 +155,10 @@ void GPIOinit(void)
   GPIO_EXTILineConfig(GPIO_PortSourceGPIOC, GPIO_PinSource12);
 	
 	/* Выход сброса микросхемы watchdog CUR-WDI */
-	GpioInitStruct.GPIO_Pin = GPIO_Pin_0;
+	GpioInitStruct.GPIO_Pin = GPIO_Pin_1;
 	GpioInitStruct.GPIO_Mode = GPIO_Mode_Out_PP;
   GpioInitStruct.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_Init(GPIOC, &GpioInitStruct);
+	GPIO_Init(GPIOA, &GpioInitStruct);
 }
 
 /**
@@ -487,9 +492,9 @@ void SPIInit(void)
   SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_16;
   SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
   SPI_InitStructure.SPI_CRCPolynomial = 5;
-  SPI_Init(SPI1, &SPI_InitStructure);
+  SPI_Init(SPI2, &SPI_InitStructure);
 		
-	SPI_Cmd(SPI1, ENABLE);
+	SPI_Cmd(SPI2, ENABLE);
 }
 
 // Инициализация DMA для передачи синхросигнала
@@ -498,7 +503,7 @@ void DMAInit(void)
 	DMA_InitTypeDef  DMA_InitStructure;
 	
 	DMA_DeInit(DMA2_Channel2);
-  DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)(&SPI1->DR);
+  DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)(&SPI2->DR);
   DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)(&SynchroSignal);
   DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
   DMA_InitStructure.DMA_BufferSize = 1;
