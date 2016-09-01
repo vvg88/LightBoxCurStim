@@ -15,6 +15,8 @@ uint8_t impCntr = 0;
 // Признак первого импульса в трейне
 bool isFirstImp = true;
 
+//__IO int16_t currentStimAmp = 0;
+
 // Обработчик вызывается в начале каждого импульса в трейне
 void TIM8_TRG_COM_IRQHandler(void)
 {
@@ -38,7 +40,7 @@ void TIM8_TRG_COM_IRQHandler(void)
 //		else
 //			MODIFY_REG(TIM8->CR2, TIM_CR2_MMS, TIM_CR2_MMS_1 | TIM_CR2_MMS_2);	// Установить выходом триггера сигнал OC3REF, чтобы амп-да установилась после СС3
 	}
-	i++;
+	//i++;
 //	TIM1->CNT = 0;		// Установить счетчик в 0, чтобы для отсчета второго и последующих периодов импульсов в трейне оба таймера (TIM1 и TIM8)
 }										// начинали отсчет с 0, иначе TIM1 запаздывает на 1 цикл и период увеличивается на 1 мс.
 
@@ -60,7 +62,7 @@ void TIM8_CC_IRQHandler(void)
 		}
 		if (impCntr++ == TIM1->RCR)			// После последнего импульса сгенерировать событие Update TIM1, чтобы избежать формирования лишнего импульса
 			TIM1->EGR |= TIM_EGR_UG;
-		j++;
+		//j++;
 	}
 	else
 	{
@@ -99,6 +101,7 @@ void TIM1_UP_IRQHandler(void)
 		EXTI->IMR |= EXTI_Line12;			// Разрешить вход прерывания
 	}
 	InitStim();						// Инициализировать новый стимул
+	//currentStimAmp = GetMaxAmp(&pUsedStimTab[StimIndex]);
 	if (StimCount != 0)		// Если число стимулов не бесконечно (задается 0)
 	{
 		if (--StimCount == 0)		// Декрементировать счетчик стимулов и если он = 0,
@@ -106,7 +109,7 @@ void TIM1_UP_IRQHandler(void)
 			StopStim();						// остановить стимуляцию
 		}
 	}
-	k++;
+	//k++;
 }
 
 // 
@@ -182,7 +185,7 @@ void ADC1_2_IRQHandler(void)
 	ADC_ClearFlag(ADC2, ADC_FLAG_JEOC | ADC_FLAG_EOC | ADC_FLAG_JSTRT);
 	if (isFirstImp)			// Определить амплитуду только для первого импульса
 	{
-		register uint16_t stimCurVal = (uint16_t)((ADC2->JDR1 * V_REF / 4096.0) / (GetMaxAmp(&pUsedStimTab[StimIndex]) > 0 ? _27_OHM : 300.0) * 10000);
+		register uint16_t stimCurVal = (uint16_t)((ADC2->JDR1 * V_REF / 4096.0) / (/*currentStimAmp*/GetMaxAmp(&pUsedStimTab[StimIndex]) > 0 ? _27_OHM : 300.0) * 10000);
 		EnQueue(STIM_CUR_CODE, stimCurVal | (StimIndex << 11));
 		isFirstImp = false;
 	}

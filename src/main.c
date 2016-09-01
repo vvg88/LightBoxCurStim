@@ -24,6 +24,7 @@ int main(void)
 	//DBGMCU->CR = /*DBGMCU_CR_DBG_TIM2_STOP | DBGMCU_CR_DBG_TIM3_STOP | DBGMCU_CR_DBG_TIM4_STOP |*/ DBGMCU_CR_DBG_TIM1_STOP | DBGMCU_CR_DBG_TIM8_STOP;
 	SaveLastRstReason();
 	DevInit();
+	InitQueues();
 	SetStimAmpl(0, true, true);
 	StimTabInit();
 	
