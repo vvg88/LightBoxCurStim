@@ -15,7 +15,7 @@ uint8_t impCntr = 0;
 // Признак первого импульса в трейне
 bool isFirstImp = true;
 
-//__IO int16_t currentStimAmp = 0;
+__IO int16_t currentStimAmp = 0;
 
 // Обработчик вызывается в начале каждого импульса в трейне
 void TIM8_TRG_COM_IRQHandler(void)
@@ -28,8 +28,8 @@ void TIM8_TRG_COM_IRQHandler(void)
 //		isFirstImp = false;
 		TIM_SelectOutputTrigger(TIM1, TIM_TRGOSource_OC2Ref);
 		TIM8->DIER &= ~TIM_DIER_TDE;		// Запретить генерацию DMA запросов
-		while ((SPI1->SR & SPI_SR_TXE) != SPI_SR_TXE);
-		SPI1->DR = 0;
+		while ((SPI2->SR & SPI_SR_TXE) != SPI_SR_TXE);
+		SPI2->DR = 0;
 	}
 	if (IsStimBiPhase)	// Для бифазного стимула
 	{
@@ -185,7 +185,7 @@ void ADC1_2_IRQHandler(void)
 	ADC_ClearFlag(ADC2, ADC_FLAG_JEOC | ADC_FLAG_EOC | ADC_FLAG_JSTRT);
 	if (isFirstImp)			// Определить амплитуду только для первого импульса
 	{
-		register uint16_t stimCurVal = (uint16_t)((ADC2->JDR1 * V_REF / 4096.0) / (/*currentStimAmp*/GetMaxAmp(&pUsedStimTab[StimIndex]) > 0 ? _27_OHM : 300.0) * 10000);
+		register uint16_t stimCurVal = (uint16_t)((ADC2->JDR1 * V_REF / 4096.0) / (currentStimAmp/*GetMaxAmp(&pUsedStimTab[StimIndex])*/ > 0 ? _27_OHM : 300.0) * 10000);
 		EnQueue(STIM_CUR_CODE, stimCurVal | (StimIndex << 11));
 		isFirstImp = false;
 	}

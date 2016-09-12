@@ -12,6 +12,7 @@ extern __IO uint8_t UsedStimTabItemsNum;
 //extern bool TabWasChanged;
 extern __IO uint16_t StimCount;
 extern ModuleStateType ModuleState;
+extern int16_t currentStimAmp;
 
 /* Причина последнего сбрса контроллера */
 TStatus LastResReason;
@@ -187,6 +188,7 @@ void InitStim(void)
 		else
 			TIM_CCxCmd(TIM8, TIM_Channel_2, TIM_CCx_Disable);
 	}
+	currentStimAmp = GetMaxAmp(&pUsedStimTab[StimIndex]); // Получить амплитуду для корректной оцифровки с АЦП
 	SynchroSignal = MAKE_SYNCHRO_SIGNAL(StimIndex);		// Сформировать синхросигнал
 	// Установить активный выход
 	if ((pUsedStimTab[StimIndex].outNum & 0x01) == 0)
